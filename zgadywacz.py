@@ -67,7 +67,7 @@ def menu():
         elif opcja == 5:
             zapisz_dane()
             print("Papa!")
-            break
+            quit()
 
 def start(ranked):
     print("\033c", end="")
@@ -81,7 +81,7 @@ def start(ranked):
         if min < 5 or max < 10 or min >= max:
             print("Źle wprowadzone dane!")
             input("Kliknij cokolwiek aby spróbować jeszcze raz...")
-            return
+            start(ranked=False)
     else:
         min = 10
         max = 100
