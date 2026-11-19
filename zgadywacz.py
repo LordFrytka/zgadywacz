@@ -11,9 +11,11 @@ nierank_gry = 0
 nierank_proby = 0
 rank_gry = 0
 rank_proby = 0
+najwieksza_wygrana = 0
+lacznie_wygrane = 0
 
 def wczytaj_dane():
-    global ogolne_mmr, ogolne_pkt, dolary, nierank_gry, nierank_proby, rank_gry, rank_proby
+    global ogolne_mmr, ogolne_pkt, dolary, nierank_gry, nierank_proby, rank_gry, rank_proby, najwieksza_wygrana, lacznie_wygrane
     if os.path.exists(plik_zapisu):
         try:
             with open(plik_zapisu, "r", encoding="utf-8") as plik:
@@ -25,6 +27,8 @@ def wczytaj_dane():
                 nierank_proby = dane.get("nierank_proby", 0)
                 rank_gry = dane.get("rank_gry", 0)
                 rank_proby = dane.get("rank_proby", 0)
+                najwieksza_wygrana = dane.get("najwieksza_wygrana", 0)
+                lacznie_wygrane = dane.get("lacznie_wygrane", 0)
         except Exception:
             pass
 
@@ -37,6 +41,8 @@ def zapisz_dane():
         "nierank_proby": nierank_proby,
         "rank_gry": rank_gry,
         "rank_proby": rank_proby,
+        "najwieksza_wygrana": najwieksza_wygrana,
+        "lacznie_wygrane": lacznie_wygrane
     }
     with open(plik_zapisu, "w", encoding="utf-8") as plik:
         json.dump(dane, plik, ensure_ascii=False, indent=4)
@@ -100,7 +106,7 @@ def tryby():
             menu()
 
 def ustawienia():
-    global ogolne_mmr, ogolne_pkt, dolary, nierank_gry, nierank_proby, rank_gry, rank_proby
+    global ogolne_mmr, ogolne_pkt, dolary, nierank_gry, nierank_proby, rank_gry, rank_proby, najwieksza_wygrana, lacznie_wygrane
     while True:
         print("\033c", end="")
         print(
@@ -170,7 +176,7 @@ def dodatkowe():
 
 def start(mode):
     print("\033c", end="")
-    global ogolne_pkt, ogolne_mmr, dolary, nierank_gry, nierank_proby, rank_gry, rank_proby
+    global ogolne_pkt, ogolne_mmr, dolary, nierank_gry, nierank_proby, rank_gry, rank_proby, najwieksza_wygrana, lacznie_wygrane
     dzielnik = 1
     pkt = 100.0
     mmr = 0
@@ -183,7 +189,7 @@ def start(mode):
             start(mode="unranked")
     else:
         if mode == "wager":
-            obstawione = int(input("Podaj ile chcesz obstawić kasy (min 100$): "))
+            obstawione = int(input("Podaj ile chcesz obstawić dolarów (min 100): "))
             if obstawione < 100 or obstawione > dolary:
                 print("Źle wprowadzone dane!")
                 input("Kliknij cokolwiek aby spróbować jeszcze raz...")
@@ -195,40 +201,73 @@ def start(mode):
     liczba = 0
     print(f"Wylosowano liczbę z przedziału <{min};{max}>. Spróbuj zgadnąć!")
 
-    while liczba != losowa:
-        try:
-            liczba = int(input("Twoja liczba: "))
-        except ValueError:
-            print("To musi być liczba!")
-            continue
-        if liczba == losowa:
-            print("Gratulacje! Udało ci się zgadnąć!")
-            if mode == "unranked":
-                pkt = pkt / dzielnik
-                ogolne_pkt += pkt
-                nierank_gry += 1
-                nierank_proby += dzielnik
-                print(f"Zdobywasz {pkt:.2f} punktów!")
+    if mode == "unranked" or mode == "ranked":
+        while liczba != losowa:
+            try:
+                liczba = int(input("Twoja liczba: "))
+            except ValueError:
+                print("To musi być liczba!")
+                continue
+            if liczba == losowa:
+                print("Gratulacje! Udało ci się zgadnąć!")
+                if mode == "unranked":
+                    pkt = pkt / dzielnik
+                    ogolne_pkt += pkt
+                    nierank_gry += 1
+                    nierank_proby += dzielnik
+                    print(f"Zdobywasz {pkt:.2f} punktów!")
+                else:
+                    mmr = 30 - (5 * dzielnik)
+                    ogolne_mmr += mmr
+                    rank_gry += 1
+                    rank_proby += dzielnik
+                    print(
+                        f"Zdobywasz {mmr} punktów rankingowych!\n"
+                        f"Twoja aktualna ranga: {zaladuj_range()}"
+                    )
+                    zapisz_dane()
             else:
-                mmr = 30 - (5 * dzielnik)
-                ogolne_mmr += mmr
-                rank_gry += 1
-                rank_proby += dzielnik
+                dzielnik += 1
+                if liczba == (losowa - 1) or liczba == (losowa + 1):
+                    print("Jesteś bardzo blisko!")
+                elif liczba < losowa:
+                    print("Za mało!")
+                elif liczba > losowa:
+                    print("Za dużo!")
+        input("\nKliknij cokolwiek aby wrócić do menu...")
+        menu()
+    else:
+        while dzielnik <= 5:
+            try:
+                liczba = int(input("Twoja liczba: "))
+            except ValueError:
+                print("To musi być liczba!")
+                continue
+            if liczba == losowa:
+                print("Gratulacje! Udało ci się zgadnąć!")
+                dolary += (obstawione * 2)
                 print(
-                    f"Zdobywasz {mmr} punktów rankingowych!\n"
-                    f"Twoja aktualna ranga: {zaladuj_range()}"
+                    f"Wygrywasz {obstawione * 2}$\n"
+                    f"Łącznie masz {dolary}$"
                 )
-                zapisz_dane()
-        else:
-            dzielnik += 1
-            if liczba == (losowa - 1) or liczba == (losowa + 1):
-                print("Jesteś bardzo blisko!")
-            elif liczba < losowa:
-                print("Za mało!")
-            elif liczba > losowa:
-                print("Za dużo!")
-    input("\nKliknij cokolwiek aby wrócić do menu...")
-    menu()
+                input("\nKliknij cokolwiek aby wrócić do menu...")
+                menu()
+            else:
+                dzielnik += 1
+                if liczba == (losowa - 1) or liczba == (losowa + 1):
+                    print("Jesteś bardzo blisko!")
+                elif liczba < losowa:
+                    print("Za mało!")
+                elif liczba > losowa:
+                    print("Za dużo!")
+        dolary -= obstawione
+        print(
+            f"Skończyły ci się próby! Wylosowana liczba to: {losowa}\n"
+            f"Przegrywasz {obstawione}$\n"
+            f"Łącznie masz {dolary}$"
+        )
+        input("\nKliknij cokolwiek aby wrócić do menu...")
+        menu()
 
 def informacje():
     print("\033c", end="")
@@ -277,9 +316,9 @@ def statystyki():
         f"Punkty rankingowe: {ogolne_mmr}\n"
         f"Średnia ilość prób: {srednia_rank:.2f}\n\n"
         "ZAKŁADY:\n"
-        f"Waluta: {dolary}$\n"
-        f"Największa wygrana: $\n"
-        f"Częstotliwość wygranych: \n"
+        f"Saldo: {dolary}$\n"
+        f"Największa wygrana: {najwieksza_wygrana}$\n"
+        f"Łącznie wygrane: {lacznie_wygrane}$\n"
         "--------------------------"
     )
     input("Kliknij cokolwiek aby wrócić do menu...")
