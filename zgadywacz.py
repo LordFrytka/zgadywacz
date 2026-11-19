@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import random
 
 plik_zapisu = "zapis.json"
@@ -75,7 +76,7 @@ def menu():
         elif opcja == 4:
             zapisz_dane()
             print("Papa!")
-            quit()
+            sys.exit(0)
 
 def tryby():
     while True:
@@ -216,6 +217,7 @@ def start(mode):
                     nierank_gry += 1
                     nierank_proby += dzielnik
                     print(f"Zdobywasz {pkt:.2f} punktów!")
+                    zapisz_dane()
                 else:
                     mmr = 30 - (5 * dzielnik)
                     ogolne_mmr += mmr
@@ -237,6 +239,7 @@ def start(mode):
         input("\nKliknij cokolwiek aby wrócić do menu...")
         menu()
     else:
+        dolary -= obstawione
         while dzielnik <= 5:
             try:
                 liczba = int(input("Twoja liczba: "))
@@ -253,6 +256,7 @@ def start(mode):
                     f"Wygrywasz {obstawione * 2}$\n"
                     f"Łącznie masz {dolary}$"
                 )
+                zapisz_dane()
                 input("\nKliknij cokolwiek aby wrócić do menu...")
                 menu()
             else:
@@ -263,12 +267,12 @@ def start(mode):
                     print("Za mało!")
                 elif liczba > losowa:
                     print("Za dużo!")
-        dolary -= obstawione
         print(
             f"Skończyły ci się próby! Wylosowana liczba to: {losowa}\n"
             f"Przegrywasz {obstawione}$\n"
             f"Łącznie masz {dolary}$"
         )
+        zapisz_dane()
         input("\nKliknij cokolwiek aby wrócić do menu...")
         menu()
 
