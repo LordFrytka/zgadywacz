@@ -1,5 +1,5 @@
 <h1>Zgadywacz</h1>
-To gra, w której zgadujesz liczbę z wybranego lub ustanego przedziału. Więcej informacji znajdziesz w dodatkowym menu.
+To gra, w której zgadujesz liczbę z wybranego lub ustalonego przedziału. Więcej informacji znajdziesz w dodatkowym menu.
 
 <h2>Dostępne wersje</h2>
 <ul>
