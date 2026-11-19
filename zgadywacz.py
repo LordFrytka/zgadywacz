@@ -246,6 +246,9 @@ def start(mode):
             if liczba == losowa:
                 print("Gratulacje! Udało ci się zgadnąć!")
                 dolary += (obstawione * 2)
+                lacznie_wygrane += (obstawione * 2)
+                if najwieksza_wygrana < (obstawione * 2):
+                    najwieksza_wygrana = obstawione * 2
                 print(
                     f"Wygrywasz {obstawione * 2}$\n"
                     f"Łącznie masz {dolary}$"
