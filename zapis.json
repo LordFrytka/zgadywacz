@@ -5,5 +5,7 @@
     "nierank_gry": 0,
     "nierank_proby": 0,
     "rank_gry": 0,
-    "rank_proby": 0
+    "rank_proby": 0,
+    "najwieksza_wygrana": 0,
+    "lacznie_wygrane": 0,
 }
