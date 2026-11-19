@@ -4,6 +4,7 @@ To gra, w której zgadujesz liczbę z wybranego lub ustanego przedziału. Więce
 <h2>Dostępne wersje</h2>
 <ul>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.1">Wersja 1.1</a></li>
+  <li>Wersja 1.0 (niedostępna ;c)</li>
 </ul>
 
 <h3>WAŻNE!!!</h3>
