@@ -9,7 +9,7 @@ To gra, w której zgadujesz liczbę z wybranego lub ustalonego przedziału. Wię
 
 <h3>WAŻNE!!!</h3>
 <ul>
-<li>Można pobrać skrypt w osobnym branchu</li>
+<li>Można pobrać sam .exe bez skryptu</li>
 <li>Plik zapis.json tworzy się samemu przy zapisie danych</li>
 <li>Zalecane uruchomienie pliku .exe jako administrator</li>
 </ul>
