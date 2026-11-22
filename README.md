@@ -30,7 +30,7 @@ Masz stały przedział (od 10 do 100) i zdobywasz punkty MMR, dzięki którym od
 <h3>Spis rang:</h3>
 <ul>
   <li><b>Stracono</b> (0 MMR)</li>
-  <li><b>Brąz</b> (0-499 MMR)</li>
+  <li><b>Brąz</b> (1-499 MMR)</li>
   <li><b>Srebro</b> (500-999 MMR)</li>
   <li><b>Złoto</b> (1000-1499 MMR)</li>
   <li><b>Platyna</b> (1500-1999 MMR)</li>
