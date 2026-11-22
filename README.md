@@ -27,6 +27,16 @@ Twoim zadaniem jest zgadnięcie liczby z ustalonego przedziału poprzez wpisanie
 Ustalasz swój własny przedział i zdobywasz punkty ogólne. Punkty nie mają tutaj żadnego większego znaczenia. Prawdopodobnie najlepszy i najzdrowszy sposób na granie w tą grę.
 <h3>Tryb rankingowy:</h3>
 Masz stały przedział (od 10 do 100) i zdobywasz punkty MMR, dzięki którym odblokowujesz kolejne rangi. Zaczynasz z 200 MMR i brązem. Możesz spaść do 0 MMR i stracić rangę, albo zdobyć srebro za 500 MMR i awansować co każde 500 MMR, aż do Master Zgadywacza za 2500 MMR. 1 rundę gry rankingowej zaczynasz z meczowym 25 MMR i spada ono z każdą kolejną próbą o -5, przez co po 6 próbie można skończyć z ujemnym MMR. Na końcu meczu jest ono dodawane, niezmienione lub odejmowane od ogólnego MMR w zależności od wyniku.
+<h3>Spis rang:</h3>
+<ul>
+  <li><b>Stracono</b> (0 MMR)</li>
+  <li><b>Brąz</b> (0-499 MMR)</li>
+  <li><b>Srebro</b> (500-999 MMR)</li>
+  <li><b>Złoto</b> (1000-1499 MMR)</li>
+  <li><b>Platyna</b> (1500-1999 MMR)</li>
+  <li><b>Diament</b> (2000-2499 MMR)</li>
+  <li><b>Master Zgadywacz</b> (2500+ MMR)</li>
+</ul>
 <h3>Tryb zakładowy:</h3>
 Obstawiasz dolary (minimum 100$) i w maksymalnie 5 prób musisz zgadnąć liczbę ze stałego przedziału (od 10 do 100). Wygrana podwaja stawkę, a przegrana zabiera obstawioną kwotę.
 <h3>Sklep rankingowy:</h3>
