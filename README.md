@@ -16,6 +16,13 @@
   <li>Zalecane uruchomienie pliku .exe jako administrator</li>
 </ul>
 <h2>Szczegółowy opis</h2>
+<h3>Główne założenia gry:</h3>
+Twoim zadaniem jest zgadnięcie liczby z ustalonego przedziału poprzez wpisanie liczby w pole. Jak nie udało ci się zgadnąć to pojawi się jeden z tych komunikatów:<br><br>
+<ul>
+  <li><b>"Za mało!"</b> - Wylosowana liczba jest mniejsza o 2 lub więcej.</li>
+  <li><b>"Za dużo!"</b> - Wylosowana liczba jest większa o 2 lub więcej.</li>
+  <li><b>"Jesteś bardzo blisko!"</b> - Wylosowana liczba jest mniejsza lub większa o 1.</li>
+</ul>
 <h3>Tryb nierankingowy:</h3>
 Ustalasz swój własny przedział i zdobywasz punkty ogólne. Punkty nie mają tutaj żadnego większego znaczenia. Prawdopodobnie najlepszy i najzdrowszy sposób na granie w tą grę.
 <h3>Tryb rankingowy:</h3>
