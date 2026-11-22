@@ -1119,7 +1119,7 @@ class ZgadywaczApp:
         tk.Label(center, text="NOWOŚCI", font=(FONT_FAMILY, 20, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
         fragmenty = [
             ("WERSJA 1.3:\n", "header"),
-            ("• Dodano sklep rankingowego\n", "text"),
+            ("• Dodano sklep rankingowy\n", "text"),
             ("• Dodano zakładkę z bonusami\n", "text"),
             ("• Dodano ekwipunek do statystyk\n", "text"),
             ("• Dodano przycisk ponownego zagrania trybu\n", "text"),
@@ -1137,6 +1137,8 @@ class ZgadywaczApp:
         self._przycisk(center, "Powrót", self.pokaz_dodatkowe, width=20, pady=8).pack()
 
     def wyjdz_z_gry(self):
+        if self.gra_w_toku and self.mode == "ranked":
+            self.ogolne_mmr = max(0, self.ogolne_mmr - 25)
         self.zapisz_dane()
         self.root.destroy()
         sys.exit(0)
