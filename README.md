@@ -3,6 +3,7 @@ To gra, w której zgadujesz liczbę z wybranego lub ustalonego przedziału. Wię
 
 <h2>Dostępne wersje</h2>
 <ul>
+  <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.3.1">Wersja 1.3.1</a></li>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.3">Wersja 1.3</a></li>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.2">Wersja 1.2</a></li>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.1">Wersja 1.1</a></li>
