@@ -4,31 +4,32 @@ import random
 import sys
 import tkinter as tk
 
-PLIK_ZAPISU = "zapis.json"
-BG_MAIN = "#0f172a"
-BG_CARD = "#1e293b"
-BG_INPUT = "#0f172a"
-FG_TEXT = "#f8fafc"
-FG_MUTED = "#94a3b8"
-BG_MUTED = "#3b3f44"
+SAVE_FILE = "zapis.json"
+BACKGROUND_MAIN = "#0f172a"
+BACKGROUND_CARD = "#1e293b"
+BACKGROUND_INPUT = "#0f172a"
+FOREGROUND_TEXT = "#f8fafc"
+FOREGROUND_MUTED = "#94a3b8"
+BACKGROUND_MUTED = "#3b3f44"
 PURPLE_DARK = "#a855f7"
 PURPLE_LIGHT = "#c084fc"
-TOO_MUCH = "#63CA60"
-TOO_LESS = "#d31b1b"
+TOO_HIGH = "#63CA60"
+TOO_LOW = "#d31b1b"
 SUCCESS = "#22c55e"
 WARNING = "#f59e0b"
 DANGER = "#ef4444"
-BTN_BASE = "#334155"
-CENA_PODPOWIEDZI = 10000
-CENA_BOOSTERA = 25000
-BOOSTER_GIER = 5
+BUTTON_BASE = "#334155"
+SCROLLBAR_THUMB = "#475569"
+HINT_PRICE = 10000
+BOOSTER_PRICE = 25000
+BOOSTER_GAMES = 5
 BOOSTER_MMR = 10
-SZEROKOSC_PODPOWIEDZI = 10
-BONUS_BANKRUTA = 500
-BONUS_HAZARDZISTY = 5000
-PROG_HAZARDZISTY = 25000
+HINT_RANGE_WIDTH = 10
+BANKRUPT_BONUS = 500
+GAMBLER_BONUS = 5000
+GAMBLER_BONUS_THRESHOLD = 25000
 FONT_FAMILY = "Trebuchet MS"
-KOLORY_RANG = {
+RANK_COLORS = {
     "Stracono": "#ef4444",
     "Brąz": "#d97706",
     "Srebro": "#cbd5e1",
@@ -37,160 +38,262 @@ KOLORY_RANG = {
     "Diament": "#67e8f9",
     "Master Zgadywacz": "#e879f9"
 }
+LEGACY_SAVE_KEYS = {
+    "total_mmr": "ogolne_mmr",
+    "total_points": "ogolne_pkt",
+    "dollars": "dolary",
+    "unranked_games": "nierank_gry",
+    "unranked_attempts": "nierank_proby",
+    "ranked_games": "rank_gry",
+    "ranked_attempts": "rank_proby",
+    "biggest_win": "najwieksza_wygrana",
+    "total_winnings": "lacznie_wygrane",
+    "hints": "podpowiedzi",
+    "booster_games_left": "booster_gry",
+    "gambler_bonuses_claimed": "hazard_odebrane",
+}
 
-def formatowanie(liczba):
-    return f"{int(liczba):,}".replace(",", ".")
+def format_number(number):
+    return f"{int(number):,}".replace(",", ".")
 
-class ZgadywaczApp:
+class StyledScrollbar(tk.Canvas):
+    MINIMUM_THUMB_LENGTH = 28
+    THUMB_WIDTH = 6
+    def __init__(self, parent, command, width=12):
+        super().__init__(
+            parent,
+            width=width,
+            bg=BACKGROUND_MAIN,
+            highlightthickness=0,
+            bd=0
+        )
+        self.command = command
+        self.first = 0.0
+        self.last = 1.0
+        self._thumb_top = 0.0
+        self._thumb_length = 0.0
+        self._drag_offset = None
+        self._hovered = False
+        self.bind("<Configure>", lambda _event: self._draw())
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+    def set(self, first, last):
+        self.first = float(first)
+        self.last = float(last)
+        self._draw()
+    def _draw(self):
+        self.delete("all")
+        height = self.winfo_height()
+        span = self.last - self.first
+        if height <= 1 or span >= 1.0:
+            self._thumb_length = 0.0
+            return
+        self._thumb_length = max(span * height, self.MINIMUM_THUMB_LENGTH)
+        scrollable = 1.0 - span
+        track_length = height - self._thumb_length
+        self._thumb_top = (self.first / scrollable) * track_length if scrollable > 0 else 0.0
+        center_x = self.winfo_width() / 2
+        radius = self.THUMB_WIDTH / 2
+        active = self._hovered or self._drag_offset is not None
+        self.create_line(
+            center_x,
+            self._thumb_top + radius,
+            center_x,
+            self._thumb_top + self._thumb_length - radius,
+            width=self.THUMB_WIDTH,
+            capstyle="round",
+            fill=PURPLE_LIGHT if active else SCROLLBAR_THUMB
+        )
+    def _on_press(self, event):
+        if self._thumb_length <= 0:
+            return
+        if self._thumb_top <= event.y <= self._thumb_top + self._thumb_length:
+            self._drag_offset = event.y - self._thumb_top
+            self._draw()
+        elif event.y < self._thumb_top:
+            self.command("scroll", -1, "pages")
+        else:
+            self.command("scroll", 1, "pages")
+    def _on_drag(self, event):
+        if self._drag_offset is None:
+            return
+        track_length = self.winfo_height() - self._thumb_length
+        if track_length <= 0:
+            return
+        position = min(max(event.y - self._drag_offset, 0), track_length) / track_length
+        span = self.last - self.first
+        self.command("moveto", position * (1.0 - span))
+    def _on_release(self, _event):
+        self._drag_offset = None
+        self._draw()
+    def _on_enter(self, _event):
+        self._hovered = True
+        self._draw()
+    def _on_leave(self, _event):
+        self._hovered = False
+        self._draw()
+
+class NumGuesser:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("ZGADYWACZ - Edycja Okienkowa")
-        self._geometria_okna = "700x720"
-        self.root.geometry(self._geometria_okna)
+        self._window_geometry = "700x720"
+        self.root.geometry(self._window_geometry)
         self.root.minsize(600, 680)
-        self.root.configure(bg=BG_MAIN)
-        self.domyslne_dane()
-        self.wczytaj_dane()
+        self.root.configure(bg=BACKGROUND_MAIN)
+        self.set_default_data()
+        self.load_data()
         self.fullscreen = False
-        self.wybrany_fullscreen = False
-        self._odswiez_ekran_ustawien = None
+        self.selected_fullscreen = False
+        self._refresh_settings_screen = None
+        self._back_action = None
         self.mode = None
-        self.losowa = 0
-        self.dzielnik = 1
-        self.obstawione = 0
-        self.min_val = 10
-        self.max_val = 100
-        self.gra_w_toku = False
-        self.podpowiedz_uzyta = False
-        self.btn_hint = None
-        self.lbl_hint = None
-        self.btn_replay = None
-        self._zbuduj_szkielet()
-        self.pokaz_menu()
-        self.root.protocol("WM_DELETE_WINDOW", self.wyjdz_z_gry)
-        self.root.bind("<F11>", self._przelacz_pelny_ekran)
-        self.root.bind("<Configure>", self._dostosuj_do_rozmiaru)
+        self.secret_number = 0
+        self.current_attempt = 1
+        self.wagered_amount = 0
+        self.min_value = 10
+        self.max_value = 100
+        self.game_in_progress = False
+        self.hint_used = False
+        self.hint_button = None
+        self.hint_label = None
+        self.replay_button = None
+        self._build_skeleton()
+        self.show_menu()
+        self.root.protocol("WM_DELETE_WINDOW", self.quit_game)
+        self.root.bind("<F11>", self._toggle_fullscreen)
+        self.root.bind("<Configure>", self._adjust_to_size)
+        self.root.bind("<KeyPress-r>", self._on_replay_key)
+        self.root.bind("<KeyPress-R>", self._on_replay_key)
+        self.root.bind("<BackSpace>", self._on_back_key)
 
-    def domyslne_dane(self):
-        self.ogolne_mmr = 200
-        self.ogolne_pkt = 0.0
-        self.dolary = 1000
-        self.nierank_gry = 0
-        self.nierank_proby = 0
-        self.rank_gry = 0
-        self.rank_proby = 0
-        self.najwieksza_wygrana = 0
-        self.lacznie_wygrane = 0
-        self.podpowiedzi = 0
-        self.booster_gry = 0
-        self.hazard_odebrane = 0
+    def set_default_data(self):
+        self.total_mmr = 200
+        self.total_points = 0.0
+        self.dollars = 1000
+        self.unranked_games = 0
+        self.unranked_attempts = 0
+        self.ranked_games = 0
+        self.ranked_attempts = 0
+        self.biggest_win = 0
+        self.total_winnings = 0
+        self.hints = 0
+        self.booster_games_left = 0
+        self.gambler_bonuses_claimed = 0
 
-    def wczytaj_dane(self):
-        if os.path.exists(PLIK_ZAPISU):
+    def load_data(self):
+        if os.path.exists(SAVE_FILE):
             try:
-                with open(PLIK_ZAPISU, "r", encoding="utf-8") as plik:
-                    dane = json.load(plik)
-                    self.ogolne_mmr = dane.get("ogolne_mmr", 200)
-                    self.ogolne_pkt = float(dane.get("ogolne_pkt", 0.0))
-                    self.dolary = dane.get("dolary", 1000)
-                    self.nierank_gry = dane.get("nierank_gry", 0)
-                    self.nierank_proby = dane.get("nierank_proby", 0)
-                    self.rank_gry = dane.get("rank_gry", 0)
-                    self.rank_proby = dane.get("rank_proby", 0)
-                    self.najwieksza_wygrana = dane.get("najwieksza_wygrana", 0)
-                    self.lacznie_wygrane = dane.get("lacznie_wygrane", 0)
-                    self.podpowiedzi = dane.get("podpowiedzi", 0)
-                    self.booster_gry = dane.get("booster_gry", 0)
-                    self.hazard_odebrane = dane.get("hazard_odebrane", 0)
+                with open(SAVE_FILE, "r", encoding="utf-8") as save_file:
+                    data = json.load(save_file)
+                    def read_value(key, default):
+                        return data.get(key, data.get(LEGACY_SAVE_KEYS[key], default))
+                    self.total_mmr = read_value("total_mmr", 200)
+                    self.total_points = float(read_value("total_points", 0.0))
+                    self.dollars = read_value("dollars", 1000)
+                    self.unranked_games = read_value("unranked_games", 0)
+                    self.unranked_attempts = read_value("unranked_attempts", 0)
+                    self.ranked_games = read_value("ranked_games", 0)
+                    self.ranked_attempts = read_value("ranked_attempts", 0)
+                    self.biggest_win = read_value("biggest_win", 0)
+                    self.total_winnings = read_value("total_winnings", 0)
+                    self.hints = read_value("hints", 0)
+                    self.booster_games_left = read_value("booster_games_left", 0)
+                    self.gambler_bonuses_claimed = read_value("gambler_bonuses_claimed", 0)
             except Exception:
                 pass
 
-    def zapisz_dane(self):
-        dane = {
-            "ogolne_mmr": self.ogolne_mmr,
-            "ogolne_pkt": self.ogolne_pkt,
-            "dolary": self.dolary,
-            "nierank_gry": self.nierank_gry,
-            "nierank_proby": self.nierank_proby,
-            "rank_gry": self.rank_gry,
-            "rank_proby": self.rank_proby,
-            "najwieksza_wygrana": self.najwieksza_wygrana,
-            "lacznie_wygrane": self.lacznie_wygrane,
-            "podpowiedzi": self.podpowiedzi,
-            "booster_gry": self.booster_gry,
-            "hazard_odebrane": self.hazard_odebrane,
+    def save_data(self):
+        data = {
+            "total_mmr": self.total_mmr,
+            "total_points": self.total_points,
+            "dollars": self.dollars,
+            "unranked_games": self.unranked_games,
+            "unranked_attempts": self.unranked_attempts,
+            "ranked_games": self.ranked_games,
+            "ranked_attempts": self.ranked_attempts,
+            "biggest_win": self.biggest_win,
+            "total_winnings": self.total_winnings,
+            "hints": self.hints,
+            "booster_games_left": self.booster_games_left,
+            "gambler_bonuses_claimed": self.gambler_bonuses_claimed,
         }
-        with open(PLIK_ZAPISU, "w", encoding="utf-8") as plik:
-            json.dump(dane, plik, ensure_ascii=False, indent=4)
+        with open(SAVE_FILE, "w", encoding="utf-8") as save_file:
+            json.dump(data, save_file, ensure_ascii=False, indent=4)
 
-    def zaladuj_range(self):
-        if self.ogolne_mmr <= 0:
-            self.ogolne_mmr = 0
+    def get_rank(self):
+        if self.total_mmr <= 0:
+            self.total_mmr = 0
             return "Stracono"
-        elif self.ogolne_mmr < 500:
+        elif self.total_mmr < 500:
             return "Brąz"
-        elif self.ogolne_mmr < 1000:
+        elif self.total_mmr < 1000:
             return "Srebro"
-        elif self.ogolne_mmr < 1500:
+        elif self.total_mmr < 1500:
             return "Złoto"
-        elif self.ogolne_mmr < 2000:
+        elif self.total_mmr < 2000:
             return "Platyna"
-        elif self.ogolne_mmr < 2500:
+        elif self.total_mmr < 2500:
             return "Diament"
         else:
             return "Master Zgadywacz"
 
-    def kolor_rangi(self, ranga=None):
-        if ranga is None:
-            ranga = self.zaladuj_range()
-        return KOLORY_RANG.get(ranga, FG_TEXT)
+    def get_rank_color(self, rank=None):
+        if rank is None:
+            rank = self.get_rank()
+        return RANK_COLORS.get(rank, FOREGROUND_TEXT)
 
-    def _zastosuj_tryb_ekranu(self, wlacz_pelny_ekran: bool):
-        if wlacz_pelny_ekran and not self.fullscreen:
+    def _apply_screen_mode(self, enable_fullscreen: bool):
+        if enable_fullscreen and not self.fullscreen:
             if self.root.state() == "normal":
-                self._geometria_okna = self.root.geometry()
+                self._window_geometry = self.root.geometry()
             self.fullscreen = True
-            self.wybrany_fullscreen = True
+            self.selected_fullscreen = True
             self.root.attributes("-fullscreen", True)
             self.root.update_idletasks()
-        elif not wlacz_pelny_ekran and self.fullscreen:
+        elif not enable_fullscreen and self.fullscreen:
             self.fullscreen = False
-            self.wybrany_fullscreen = False
+            self.selected_fullscreen = False
             self.root.attributes("-fullscreen", False)
             self.root.state("normal")
-            self.root.geometry(self._geometria_okna)
+            self.root.geometry(self._window_geometry)
             self.root.update_idletasks()
 
-    def _odswiez_przycisk_ekranu_jesli_jest(self):
-        if self._odswiez_ekran_ustawien:
-            self._odswiez_ekran_ustawien()
+    def _refresh_screen_button_if_present(self):
+        if self._refresh_settings_screen:
+            self._refresh_settings_screen()
 
-    def _przelacz_pelny_ekran(self, _event=None):
-        self._zastosuj_tryb_ekranu(not self.fullscreen)
-        self._odswiez_przycisk_ekranu_jesli_jest()
+    def _toggle_fullscreen(self, _event=None):
+        self._apply_screen_mode(not self.fullscreen)
+        self._refresh_screen_button_if_present()
 
-    def _dostosuj_do_rozmiaru(self, _event=None):
+    def _adjust_to_size(self, _event=None):
         if not self.fullscreen and self.root.state() == "normal":
-            geom = self.root.geometry()
-            if geom:
-                self._geometria_okna = geom
-        szerokosc = max(self.root.winfo_width(), 600)
-        pad_xy = 64 if szerokosc > 1000 else 24
-        self.container.config(padx=pad_xy, pady=pad_xy)
+            geometry = self.root.geometry()
+            if geometry:
+                self._window_geometry = geometry
+        width = max(self.root.winfo_width(), 600)
+        padding = 64 if width > 1000 else 24
+        self.container.config(padx=padding, pady=padding)
 
-    def _zbuduj_szkielet(self):
-        self.container = tk.Frame(self.root, bg=BG_MAIN, padx=24, pady=24)
+    def _build_skeleton(self):
+        self.container = tk.Frame(self.root, bg=BACKGROUND_MAIN, padx=24, pady=24)
         self.container.pack(fill="both", expand=True)
 
-    def _wyczysc_ekran(self):
-        self._odswiez_ekran_ustawien = None
+    def _clear_screen(self, back_action=None):
+        self._refresh_settings_screen = None
+        self._back_action = back_action
+        self.replay_button = None
         for widget in self.container.winfo_children():
             widget.destroy()
 
-    def _karta(self, parent=None, padx=28, pady=24):
+    def _create_card(self, parent=None, padx=28, pady=24):
         card = tk.Frame(
             parent or self.container,
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             padx=padx,
             pady=pady,
             highlightbackground=PURPLE_DARK,
@@ -200,20 +303,20 @@ class ZgadywaczApp:
         card.pack(fill="both", expand=True)
         return card
 
-    def _przycisk(self, parent, text, command, width=28, pady=10, base_bg=None, base_fg=None, hover_bg=None, hover_fg=None):
-        bg_normal = base_bg if base_bg is not None else BTN_BASE
-        fg_normal = base_fg if base_fg is not None else FG_TEXT
-        bg_hover = hover_bg if hover_bg is not None else PURPLE_LIGHT
-        fg_hover = hover_fg if hover_fg is not None else "#0f172a"
-        btn = tk.Button(
+    def _create_button(self, parent, text, command, width=28, pady=10, base_background=None, base_foreground=None, hover_background=None, hover_foreground=None):
+        normal_background = base_background if base_background is not None else BUTTON_BASE
+        normal_foreground = base_foreground if base_foreground is not None else FOREGROUND_TEXT
+        hovered_background = hover_background if hover_background is not None else PURPLE_LIGHT
+        hovered_foreground = hover_foreground if hover_foreground is not None else "#0f172a"
+        button = tk.Button(
             parent,
             text=text,
             command=command,
             font=(FONT_FAMILY, 11, "bold"),
-            bg=bg_normal,
-            fg=fg_normal,
-            activebackground=bg_hover,
-            activeforeground=fg_hover,
+            bg=normal_background,
+            fg=normal_foreground,
+            activebackground=hovered_background,
+            activeforeground=hovered_foreground,
             relief="flat",
             cursor="hand2",
             width=width,
@@ -221,72 +324,93 @@ class ZgadywaczApp:
             bd=0,
             highlightthickness=0
         )
-        def on_enter(_e):
-            if str(btn["state"]) != "disabled":
-                btn.config(bg=bg_hover, fg=fg_hover)
-        def on_leave(_e):
-            if str(btn["state"]) != "disabled":
-                btn.config(bg=bg_normal, fg=fg_normal)
-        def on_press(_e):
-            if str(btn["state"]) != "disabled":
-                btn.config(bg=bg_hover, fg=fg_hover)
-        def on_release(e):
-            if str(btn["state"]) != "disabled":
-                inside = 0 <= e.x <= btn.winfo_width() and 0 <= e.y <= btn.winfo_height()
-                btn.config(
-                    bg=bg_hover if inside else bg_normal,
-                    fg=fg_hover if inside else fg_normal,
+        def on_enter(_event):
+            if str(button["state"]) != "disabled":
+                button.config(bg=hovered_background, fg=hovered_foreground)
+        def on_leave(_event):
+            if str(button["state"]) != "disabled":
+                button.config(bg=normal_background, fg=normal_foreground)
+        def on_press(_event):
+            if str(button["state"]) != "disabled":
+                button.config(bg=hovered_background, fg=hovered_foreground)
+        def on_release(event):
+            if str(button["state"]) != "disabled":
+                inside = 0 <= event.x <= button.winfo_width() and 0 <= event.y <= button.winfo_height()
+                button.config(
+                    bg=hovered_background if inside else normal_background,
+                    fg=hovered_foreground if inside else normal_foreground,
                 )
-        btn.bind("<Enter>", on_enter)
-        btn.bind("<Leave>", on_leave)
-        btn.bind("<ButtonPress-1>", on_press)
-        btn.bind("<ButtonRelease-1>", on_release)
-        return btn
+        button.bind("<Enter>", on_enter)
+        button.bind("<Leave>", on_leave)
+        button.bind("<ButtonPress-1>", on_press)
+        button.bind("<ButtonRelease-1>", on_release)
+        return button
 
-    def _wylacz_przycisk(self, btn):
-        btn.config(state="disabled", bg=BTN_BASE, fg=FG_MUTED, cursor="arrow")
+    def _disable_button(self, button):
+        button.config(state="disabled", bg=BUTTON_BASE, fg=FOREGROUND_MUTED, cursor="arrow")
 
-    def _panel_tekstowy(self, parent, fragmenty, height=11, width=58):
-        txt = tk.Text(
+    def _create_text_panel(self, parent, fragments, height=11, width=58):
+        holder = tk.Frame(
             parent,
+            bg=BACKGROUND_MAIN,
+            highlightbackground="#334155",
+            highlightcolor="#334155",
+            highlightthickness=1
+        )
+        holder.pack(pady=(0, 16))
+        text_widget = tk.Text(
+            holder,
             font=(FONT_FAMILY, 10, "bold"),
-            bg=BG_MAIN,
-            fg=FG_TEXT,
+            bg=BACKGROUND_MAIN,
+            fg=FOREGROUND_TEXT,
             relief="flat",
             wrap="word",
             height=height,
             width=width,
             padx=18,
             pady=14,
-            highlightbackground="#334155",
-            highlightcolor="#334155",
-            highlightthickness=1,
+            bd=0,
+            highlightthickness=0,
             cursor="arrow"
         )
-        txt.tag_configure("text", font=(FONT_FAMILY, 10, "bold"), foreground=FG_TEXT)
-        txt.tag_configure("header", font=(FONT_FAMILY, 12, "bold"), foreground=PURPLE_LIGHT)
-        for tekst, styl, *kolor in fragmenty:
-            if kolor:
-                tag_name = f"{styl}_{kolor[0]}"
-                font_cfg = (FONT_FAMILY, 12, "bold") if styl == "header" else (FONT_FAMILY, 10, "bold")
-                txt.tag_configure(tag_name, font=font_cfg, foreground=kolor[0])
-                txt.insert("end", tekst, tag_name)
+        scrollbar = StyledScrollbar(holder, command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        text_widget.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns", padx=(0, 4), pady=6)
+        text_widget.tag_configure("text", font=(FONT_FAMILY, 10, "bold"), foreground=FOREGROUND_TEXT)
+        text_widget.tag_configure("header", font=(FONT_FAMILY, 12, "bold"), foreground=PURPLE_LIGHT)
+        for text, style, *color in fragments:
+            if color:
+                tag_name = f"{style}_{color[0]}"
+                font_config = (FONT_FAMILY, 12, "bold") if style == "header" else (FONT_FAMILY, 10, "bold")
+                text_widget.tag_configure(tag_name, font=font_config, foreground=color[0])
+                text_widget.insert("end", text, tag_name)
             else:
-                txt.insert("end", tekst, styl)
-        txt.config(state="disabled")
-        txt.pack(pady=(0, 16))
-        return txt
+                text_widget.insert("end", text, style)
+        text_widget.config(state="disabled")
 
-    def _pokaz_blad_walidacji(self, tytul: str, komunikat: str):
-        win = tk.Toplevel(self.root)
-        win.title(tytul)
-        win.configure(bg=BG_MAIN)
-        win.resizable(False, False)
-        win.transient(self.root)
-        win.grab_set()
+        def on_mouse_wheel(event):
+            if event.num == 4 or event.delta > 0:
+                text_widget.yview_scroll(-3, "units")
+            elif event.num == 5 or event.delta < 0:
+                text_widget.yview_scroll(3, "units")
+            return "break"
+
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            text_widget.bind(sequence, on_mouse_wheel)
+            scrollbar.bind(sequence, on_mouse_wheel)
+        return text_widget
+
+    def _show_error_popup(self, title: str, message: str):
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.configure(bg=BACKGROUND_MAIN)
+        window.resizable(False, False)
+        window.transient(self.root)
+        window.grab_set()
         frame = tk.Frame(
-            win,
-            bg=BG_CARD,
+            window,
+            bg=BACKGROUND_CARD,
             padx=24,
             pady=24,
             highlightbackground=PURPLE_DARK,
@@ -295,829 +419,868 @@ class ZgadywaczApp:
         frame.pack(fill="both", expand=True, padx=24, pady=24)
         tk.Label(
             frame,
-            text=tytul.upper(),
+            text=title.upper(),
             font=(FONT_FAMILY, 18, "bold"),
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             fg=DANGER
         ).pack(pady=(0, 8))
         tk.Label(
             frame,
-            text=komunikat,
+            text=message,
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_TEXT,
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_TEXT,
             justify="center",
             wraplength=340
         ).pack(pady=(0, 16))
-        self._przycisk(frame, "OK", win.destroy, width=16, pady=8).pack()
-        win.update_idletasks()
-        w = win.winfo_width()
-        h = win.winfo_height()
-        rx = self.root.winfo_rootx()
-        ry = self.root.winfo_rooty()
-        rw = self.root.winfo_width()
-        rh = self.root.winfo_height()
-        x = rx + max((rw - w) // 2, 0)
-        y = ry + max((rh - h) // 2, 0)
-        win.geometry(f"+{x}+{y}")
-        win.wait_window()
+        self._create_button(frame, "OK", window.destroy, width=16, pady=8).pack()
+        window.bind("<BackSpace>", lambda _event: window.destroy())
+        window.bind("<Escape>", lambda _event: window.destroy())
+        window.update_idletasks()
+        window_width = window.winfo_width()
+        window_height = window.winfo_height()
+        root_x = self.root.winfo_rootx()
+        root_y = self.root.winfo_rooty()
+        root_width = self.root.winfo_width()
+        root_height = self.root.winfo_height()
+        position_x = root_x + max((root_width - window_width) // 2, 0)
+        position_y = root_y + max((root_height - window_height) // 2, 0)
+        window.geometry(f"+{position_x}+{position_y}")
+        window.focus_set()
+        window.wait_window()
 
-    def _otworz_okno_resetu(self):
-        win = tk.Toplevel(self.root)
-        win.title("Reset statystyk — ZGADYWACZ")
-        win.configure(bg=BG_MAIN)
-        win.resizable(False, False)
-        win.transient(self.root)
-        win.grab_set()
-        outer = tk.Frame(
-            win,
-            bg=BG_CARD,
+    def _open_reset_window(self):
+        window = tk.Toplevel(self.root)
+        window.title("Reset statystyk — ZGADYWACZ")
+        window.configure(bg=BACKGROUND_MAIN)
+        window.resizable(False, False)
+        window.transient(self.root)
+        window.grab_set()
+        outer_frame = tk.Frame(
+            window,
+            bg=BACKGROUND_CARD,
             padx=24,
             pady=24,
             highlightbackground=PURPLE_DARK,
             highlightthickness=1
         )
-        outer.pack(fill="both", expand=True, padx=24, pady=24)
-        lbl_tytul = tk.Label(
-            outer,
+        outer_frame.pack(fill="both", expand=True, padx=24, pady=24)
+        title_label = tk.Label(
+            outer_frame,
             text="RESET STATYSTYK",
             font=(FONT_FAMILY, 18, "bold"),
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             fg=PURPLE_LIGHT
         )
-        lbl_tytul.pack(pady=(0, 10))
-        info_box = tk.Frame(
-            outer,
-            bg=BG_MAIN,
+        title_label.pack(pady=(0, 10))
+        info_frame = tk.Frame(
+            outer_frame,
+            bg=BACKGROUND_MAIN,
             padx=16,
             pady=12,
             highlightbackground="#334155",
             highlightthickness=1
         )
-        info_box.pack(fill="x", pady=(0, 18))
-        lbl_opis = tk.Label(
-            info_box,
+        info_frame.pack(fill="x", pady=(0, 18))
+        description_label = tk.Label(
+            info_frame,
             text=(
                 "Czy na pewno chcesz trwale zresetować\nwszystkie statystyki?"
             ),
             font=(FONT_FAMILY, 10, "bold"),
-            bg=BG_MAIN,
-            fg=FG_TEXT,
+            bg=BACKGROUND_MAIN,
+            fg=FOREGROUND_TEXT,
             justify="left"
         )
-        lbl_opis.pack()
-        btn_row = tk.Frame(outer, bg=BG_CARD)
-        btn_row.pack()
-        def potwierdz_reset():
-            self.domyslne_dane()
-            self.zapisz_dane()
-            lbl_tytul.config(text="ZRESETOWANO", fg=SUCCESS)
-            lbl_opis.config(
+        description_label.pack()
+        button_row = tk.Frame(outer_frame, bg=BACKGROUND_CARD)
+        button_row.pack()
+        def confirm_reset():
+            self.set_default_data()
+            self.save_data()
+            title_label.config(text="ZRESETOWANO", fg=SUCCESS)
+            description_label.config(
                 text="Wszystkie statystyki zostały przywrócone\ndo wartości początkowych.",
                 justify="left"
             )
-            for child in btn_row.winfo_children():
+            for child in button_row.winfo_children():
                 child.destroy()
-            self._przycisk(btn_row, "OK", win.destroy, width=18, pady=9).pack()
-        btn_tak = self._przycisk(
-            btn_row,
+            self._create_button(button_row, "OK", window.destroy, width=18, pady=9).pack()
+        confirm_button = self._create_button(
+            button_row,
             "Resetuj",
-            potwierdz_reset,
+            confirm_reset,
             width=14,
             pady=9,
-            base_bg="#7f1d1d",
-            base_fg=FG_TEXT,
-            hover_bg="#dc2626",
-            hover_fg=FG_TEXT
+            base_background="#7f1d1d",
+            base_foreground=FOREGROUND_TEXT,
+            hover_background="#dc2626",
+            hover_foreground=FOREGROUND_TEXT
         )
-        btn_tak.pack(side="left", padx=(0, 8))
-        btn_nie = self._przycisk(btn_row, "Anuluj", win.destroy, width=14, pady=9)
-        btn_nie.pack(side="left", padx=(8, 0))
-        win.bind("<Escape>", lambda _e: win.destroy())
-        win.update_idletasks()
-        w = win.winfo_width()
-        h = win.winfo_height()
-        rx = self.root.winfo_rootx()
-        ry = self.root.winfo_rooty()
-        rw = self.root.winfo_width()
-        rh = self.root.winfo_height()
-        x = rx + max((rw - w) // 2, 0)
-        y = ry + max((rh - h) // 2, 0)
-        win.geometry(f"+{x}+{y}")
-        win.wait_window()
+        confirm_button.pack(side="left", padx=(0, 8))
+        cancel_button = self._create_button(button_row, "Anuluj", window.destroy, width=14, pady=9)
+        cancel_button.pack(side="left", padx=(8, 0))
+        window.bind("<Escape>", lambda _event: window.destroy())
+        window.bind("<BackSpace>", lambda _event: window.destroy())
+        window.update_idletasks()
+        window_width = window.winfo_width()
+        window_height = window.winfo_height()
+        root_x = self.root.winfo_rootx()
+        root_y = self.root.winfo_rooty()
+        root_width = self.root.winfo_width()
+        root_height = self.root.winfo_height()
+        position_x = root_x + max((root_width - window_width) // 2, 0)
+        position_y = root_y + max((root_height - window_height) // 2, 0)
+        window.geometry(f"+{position_x}+{position_y}")
+        window.focus_set()
+        window.wait_window()
 
-    def _powrot_do_menu_z_gry(self):
-        if self.gra_w_toku:
+    def _return_to_menu_from_game(self):
+        if self.game_in_progress:
             return
-        self.pokaz_menu()
+        self.show_menu()
 
-    def _zagraj_ponownie(self):
-        if self.gra_w_toku:
+    def _play_again(self):
+        if self.game_in_progress:
             return
         if self.mode == "wager":
-            # w trybie zakładowym trzeba ponownie wybrać stawkę
-            self.konfiguracja_gry("wager")
+            self.configure_game("wager")
         else:
-            self.rozpocznij_gre(min_val=self.min_val, max_val=self.max_val, obstawione=0)
+            self.start_game(min_value=self.min_value, max_value=self.max_value, wagered_amount=0)
 
-    def pokaz_menu(self):
-        self._wyczysc_ekran()
-        card = self._karta(pady=30)
-        center = tk.Frame(card, bg=BG_CARD)
+    def _on_replay_key(self, _event=None):
+        button = self.replay_button
+        if button is None or not button.winfo_exists():
+            return
+        if str(button["state"]) != "normal":
+            return
+        self._play_again()
+
+    def _on_back_key(self, _event=None):
+        focused_widget = self.root.focus_get()
+        if isinstance(focused_widget, tk.Entry) and str(focused_widget["state"]) == "normal":
+            return
+        if self.game_in_progress:
+            return
+        if self._back_action is not None:
+            self._back_action()
+
+    def show_menu(self):
+        self._clear_screen()
+        card = self._create_card(pady=30)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
         tk.Label(
             center,
             text="ZGADYWACZ",
             font=(FONT_FAMILY, 54, "bold"),
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             fg=PURPLE_LIGHT
         ).pack(pady=(0, 24))
-        self._przycisk(center, "Start gry", self.pokaz_tryby).pack(pady=6)
-        self._przycisk(center, "Ustawienia", self.pokaz_ustawienia).pack(pady=6)
-        self._przycisk(center, "Sklep rankingowy", self.pokaz_sklep).pack(pady=6)
-        self._przycisk(center, "Dodatkowe opcje", self.pokaz_dodatkowe).pack(pady=6)
-        self._przycisk(center, "Wyjdź z gry", self.wyjdz_z_gry).pack(pady=6)
+        self._create_button(center, "Start gry", self.show_modes).pack(pady=6)
+        self._create_button(center, "Ustawienia", self.show_settings).pack(pady=6)
+        self._create_button(center, "Sklep rankingowy", self.show_shop).pack(pady=6)
+        self._create_button(center, "Dodatkowe opcje", self.show_extras).pack(pady=6)
+        self._create_button(center, "Wyjdź z gry", self.quit_game).pack(pady=6)
 
-    def pokaz_tryby(self):
-        self._wyczysc_ekran()
-        card = self._karta(pady=22)
-        wrapper = tk.Frame(card, bg=BG_CARD, width=560)
+    def show_modes(self):
+        self._clear_screen(self.show_menu)
+        card = self._create_card(pady=22)
+        wrapper = tk.Frame(card, bg=BACKGROUND_CARD, width=560)
         wrapper.place(relx=0.5, rely=0.5, anchor="center")
         tk.Label(
             wrapper,
             text="WYBIERZ TRYB GRY",
             font=(FONT_FAMILY, 20, "bold"),
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             fg=PURPLE_DARK
         ).pack(pady=(0, 14))
-        tryby_info = [
-            ("Tryb nierankingowy", "Własny przedział liczb • Punkty ogólne", "unranked"),
-            ("Tryb rankingowy", "Przedział 10–100 • Punkty MMR i rangi", "ranked"),
+        modes_info = [
+            ("Tryb nierankingowy", "Własny przedział • Punkty ogólne", "unranked"),
+            ("Tryb rankingowy", "Przedział <10;100> • Punkty MMR i rangi", "ranked"),
             ("Tryb zakładowy", "Obstawianie dolarów • Max 5 prób • Wygrana x2\t\t", "wager"),
         ]
-        for nazwa, opis, tryb_id in tryby_info:
+        for name, description, mode_id in modes_info:
             box = tk.Frame(
                 wrapper,
-                bg=BG_MAIN,
+                bg=BACKGROUND_MAIN,
                 padx=18,
                 pady=12,
                 highlightbackground="#334155",
                 highlightthickness=1
             )
             box.pack(fill="x", pady=6)
-            left = tk.Frame(box, bg=BG_MAIN)
+            left = tk.Frame(box, bg=BACKGROUND_MAIN)
             left.pack(side="left", fill="y")
-            tk.Label(left, text=nazwa, font=(FONT_FAMILY, 12, "bold"), bg=BG_MAIN, fg=FG_TEXT, anchor="w").pack(anchor="w")
-            tk.Label(left, text=opis, font=(FONT_FAMILY, 9, "bold"), bg=BG_MAIN, fg=FG_MUTED, anchor="w").pack(anchor="w")
-            self._przycisk(
+            tk.Label(left, text=name, font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_MAIN, fg=FOREGROUND_TEXT, anchor="w").pack(anchor="w")
+            tk.Label(left, text=description, font=(FONT_FAMILY, 9, "bold"), bg=BACKGROUND_MAIN, fg=FOREGROUND_MUTED, anchor="w").pack(anchor="w")
+            self._create_button(
                 box,
                 "Wybierz",
-                lambda m=tryb_id: self.konfiguracja_gry(m),
+                lambda selected_mode=mode_id: self.configure_game(selected_mode),
                 width=12,
                 pady=7
             ).pack(side="right")
-        self._przycisk(wrapper, "Powrót do menu", self.pokaz_menu, width=22, pady=9).pack(pady=(18, 0))
+        self._create_button(wrapper, "Powrót do menu", self.show_menu, width=22, pady=9).pack(pady=(18, 0))
 
-    def pokaz_sklep(self, komunikat="", kolor=SUCCESS):
-        self._wyczysc_ekran()
-        card = self._karta(pady=22)
-        wrapper = tk.Frame(card, bg=BG_CARD, width=560)
+    def show_shop(self, message="", color=SUCCESS):
+        self._clear_screen(self.show_menu)
+        card = self._create_card(pady=22)
+        wrapper = tk.Frame(card, bg=BACKGROUND_CARD, width=560)
         wrapper.place(relx=0.5, rely=0.5, anchor="center")
         tk.Label(
             wrapper,
             text="SKLEP RANKINGOWY",
             font=(FONT_FAMILY, 20, "bold"),
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             fg=PURPLE_DARK
         ).pack(pady=(0, 6))
         tk.Label(
             wrapper,
-            text=f"Twoje saldo: {formatowanie(self.dolary)}$",
+            text=f"Twoje saldo: {format_number(self.dollars)}$",
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_MUTED
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_MUTED
         ).pack(pady=(0, 4))
-        if komunikat:
+        if message:
             tk.Label(
                 wrapper,
-                text=komunikat,
+                text=message,
                 font=(FONT_FAMILY, 12, "bold"),
-                bg=BG_CARD,
-                fg=kolor,
+                bg=BACKGROUND_CARD,
+                fg=color,
                 height=1
             ).pack(pady=(0, 6))
-        przedmioty = [
+        items = [
             (
-                "Podpowiedź",
-                f"Pokazuje przedział {SZEROKOSC_PODPOWIEDZI} liczb z wylosowaną.",
-                CENA_PODPOWIEDZI,
-                self.kup_podpowiedz,
+                f"Podpowiedź ({format_number(HINT_PRICE)}$)",
+                f"Pokazuje przedział {HINT_RANGE_WIDTH} liczb z wylosowaną.",
+                self.buy_hint,
             ),
             (
-                f"Booster MMR",
-                f"+{BOOSTER_MMR} MMR za rundę przez {BOOSTER_GIER} następnych gier.",
-                CENA_BOOSTERA,
-                self.kup_booster,
+                f"Booster MMR ({format_number(BOOSTER_PRICE)}$)",
+                f"+{BOOSTER_MMR} MMR za rundę przez {BOOSTER_GAMES} następnych gier.\t",
+                self.buy_booster,
             ),
         ]
-        for nazwa, opis, cena, akcja in przedmioty:
+        for name, description, action in items:
             box = tk.Frame(
                 wrapper,
-                bg=BG_MAIN,
+                bg=BACKGROUND_MAIN,
                 padx=18,
                 pady=12,
                 highlightbackground="#334155",
                 highlightthickness=1
             )
             box.pack(fill="x", pady=6)
-            left = tk.Frame(box, bg=BG_MAIN)
+            left = tk.Frame(box, bg=BACKGROUND_MAIN)
             left.pack(side="left", fill="y")
-            tk.Label(left, text=nazwa, font=(FONT_FAMILY, 12, "bold"), bg=BG_MAIN, fg=FG_TEXT, anchor="w").pack(anchor="w")
-            tk.Label(left, text=opis, font=(FONT_FAMILY, 9, "bold"), bg=BG_MAIN, fg=FG_MUTED, anchor="w", wraplength=290, justify="left").pack(anchor="w")
-            self._przycisk(
+            tk.Label(left, text=name, font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_MAIN, fg=FOREGROUND_TEXT, anchor="w").pack(anchor="w")
+            tk.Label(left, text=description, font=(FONT_FAMILY, 9, "bold"), bg=BACKGROUND_MAIN, fg=FOREGROUND_MUTED, anchor="w", wraplength=290, justify="left").pack(anchor="w")
+            self._create_button(
                 box,
-                f"Kup ({formatowanie(cena)}$)",
-                akcja,
+                "Kup",
+                action,
                 width=13,
                 pady=7
             ).pack(side="right", padx=(10, 0))
-        self._przycisk(wrapper, "Powrót do menu", self.pokaz_menu, width=22, pady=9).pack(pady=(18, 0))
+        self._create_button(wrapper, "Powrót do menu", self.show_menu, width=22, pady=9).pack(pady=(18, 0))
 
-    def _sprawdz_stac_cie(self, cena):
-        if self.dolary < cena:
-            self._pokaz_blad_walidacji(
+    def _check_can_afford(self, price):
+        if self.dollars < price:
+            self._show_error_popup(
                 "Brak środków",
-                f"Potrzebujesz {formatowanie(cena)}$, a masz tylko {formatowanie(self.dolary)}$!"
+                f"Potrzebujesz {format_number(price)}$, a masz tylko {format_number(self.dollars)}$!"
             )
             return False
         return True
 
-    def kup_podpowiedz(self):
-        if not self._sprawdz_stac_cie(CENA_PODPOWIEDZI):
+    def buy_hint(self):
+        if not self._check_can_afford(HINT_PRICE):
             return
-        self.dolary -= CENA_PODPOWIEDZI
-        self.podpowiedzi += 1
-        self.zapisz_dane()
-        self.pokaz_sklep("Kupiono podpowiedź!")
+        self.dollars -= HINT_PRICE
+        self.hints += 1
+        self.save_data()
+        self.show_shop("Kupiono podpowiedź!")
 
-    def kup_booster(self):
-        if not self._sprawdz_stac_cie(CENA_BOOSTERA):
+    def buy_booster(self):
+        if not self._check_can_afford(BOOSTER_PRICE):
             return
-        self.dolary -= CENA_BOOSTERA
-        self.booster_gry += BOOSTER_GIER
-        self.zapisz_dane()
-        self.pokaz_sklep(f"Kupiono booster MMR!")
+        self.dollars -= BOOSTER_PRICE
+        self.booster_games_left += BOOSTER_GAMES
+        self.save_data()
+        self.show_shop(f"Kupiono booster MMR!")
 
-    def pokaz_bonusy(self, komunikat="", kolor=SUCCESS):
-        self._wyczysc_ekran()
-        card = self._karta(pady=22)
-        wrapper = tk.Frame(card, bg=BG_CARD, width=560)
+    def show_bonuses(self, message="", color=SUCCESS):
+        self._clear_screen(self.show_extras)
+        card = self._create_card(pady=22)
+        wrapper = tk.Frame(card, bg=BACKGROUND_CARD, width=560)
         wrapper.place(relx=0.5, rely=0.5, anchor="center")
         tk.Label(
             wrapper,
             text="BONUSY",
             font=(FONT_FAMILY, 20, "bold"),
-            bg=BG_CARD,
+            bg=BACKGROUND_CARD,
             fg=PURPLE_DARK
         ).pack(pady=(0, 6))
         tk.Label(
             wrapper,
-            text=f"Twoje saldo: {formatowanie(self.dolary)}$",
+            text=f"Twoje saldo: {format_number(self.dollars)}$",
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_MUTED
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_MUTED
         ).pack(pady=(0, 4))
-        if komunikat:
+        if message:
             tk.Label(
                 wrapper,
-                text=komunikat,
+                text=message,
                 font=(FONT_FAMILY, 12, "bold"),
-                bg=BG_CARD,
-                fg=kolor,
+                bg=BACKGROUND_CARD,
+                fg=color,
                 height=1
             ).pack(pady=(0, 6))
-        dostepne = self.dostepne_bonusy_hazardzisty()
-        box1 = tk.Frame(wrapper, bg=BG_MAIN, padx=18, pady=12, highlightbackground="#334155", highlightthickness=1)
-        box1.pack(fill="x", pady=6)
-        left1 = tk.Frame(box1, bg=BG_MAIN)
-        left1.pack(side="left", fill="y")
-        tk.Label(left1, text=f"Bonus Bankruta ({formatowanie(BONUS_BANKRUTA)}$)", font=(FONT_FAMILY, 12, "bold"), bg=BG_MAIN, fg=FG_TEXT, anchor="w").pack(anchor="w")
+        available = self.available_gambler_bonuses()
+        bankrupt_box = tk.Frame(wrapper, bg=BACKGROUND_MAIN, padx=18, pady=12, highlightbackground="#334155", highlightthickness=1)
+        bankrupt_box.pack(fill="x", pady=6)
+        bankrupt_left = tk.Frame(bankrupt_box, bg=BACKGROUND_MAIN)
+        bankrupt_left.pack(side="left", fill="y")
+        tk.Label(bankrupt_left, text=f"Bonus Bankruta ({format_number(BANKRUPT_BONUS)}$)", font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_MAIN, fg=FOREGROUND_TEXT, anchor="w").pack(anchor="w")
         tk.Label(
-            left1,
+            bankrupt_left,
             text=f"Dostępny tylko przy saldzie 0$.",
             font=(FONT_FAMILY, 9, "bold"),
-            bg=BG_MAIN,
-            fg=FG_MUTED,
+            bg=BACKGROUND_MAIN,
+            fg=FOREGROUND_MUTED,
             anchor="w",
             wraplength=290,
             justify="left"
         ).pack(anchor="w")
-        btn1 = self._przycisk(box1, "Odbierz", self.odbierz_bonus_bankruta, width=13, pady=7)
-        btn1.pack(side="right", padx=(10, 0))
-        if self.dolary != 0:
-            self._wylacz_przycisk(btn1)
-        box2 = tk.Frame(wrapper, bg=BG_MAIN, padx=18, pady=12, highlightbackground="#334155", highlightthickness=1)
-        box2.pack(fill="x", pady=6)
-        left2 = tk.Frame(box2, bg=BG_MAIN)
-        left2.pack(side="left", fill="y")
-        tk.Label(left2, text=f"Bonus Hazardzisty ({formatowanie(BONUS_HAZARDZISTY)}$)", font=(FONT_FAMILY, 12, "bold"), bg=BG_MAIN, fg=FG_TEXT, anchor="w").pack(anchor="w")
+        bankrupt_button = self._create_button(bankrupt_box, "Odbierz", self.claim_bankrupt_bonus, width=13, pady=7)
+        bankrupt_button.pack(side="right", padx=(10, 0))
+        if self.dollars != 0:
+            self._disable_button(bankrupt_button)
+        gambler_box = tk.Frame(wrapper, bg=BACKGROUND_MAIN, padx=18, pady=12, highlightbackground="#334155", highlightthickness=1)
+        gambler_box.pack(fill="x", pady=6)
+        gambler_left = tk.Frame(gambler_box, bg=BACKGROUND_MAIN)
+        gambler_left.pack(side="left", fill="y")
+        tk.Label(gambler_left, text=f"Bonus Hazardzisty ({format_number(GAMBLER_BONUS)}$)", font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_MAIN, fg=FOREGROUND_TEXT, anchor="w").pack(anchor="w")
         tk.Label(
-            left2,
+            gambler_left,
             text=(
-                f"Dostępny za każde {formatowanie(PROG_HAZARDZISTY)}$ łącznych wygranych.\t"
+                f"Dostępny za każde {format_number(GAMBLER_BONUS_THRESHOLD)}$ łącznych wygranych.\t\t"
             ),
             font=(FONT_FAMILY, 9, "bold"),
-            bg=BG_MAIN,
-            fg=FG_MUTED,
+            bg=BACKGROUND_MAIN,
+            fg=FOREGROUND_MUTED,
             anchor="w",
             wraplength=290,
             justify="left"
         ).pack(anchor="w")
-        btn2 = self._przycisk(box2, "Odbierz", self.odbierz_bonus_hazardzisty, width=13, pady=7)
-        btn2.pack(side="right", padx=(10, 0))
-        if dostepne <= 0:
-            self._wylacz_przycisk(btn2)
-        self._przycisk(wrapper, "Powrót", self.pokaz_dodatkowe, width=22, pady=9).pack(pady=(18, 0))
+        gambler_button = self._create_button(gambler_box, "Odbierz", self.claim_gambler_bonus, width=13, pady=7)
+        gambler_button.pack(side="right", padx=(10, 0))
+        if available <= 0:
+            self._disable_button(gambler_button)
+        self._create_button(wrapper, "Powrót", self.show_extras, width=22, pady=9).pack(pady=(18, 0))
 
-    def dostepne_bonusy_hazardzisty(self):
-        return max(0, self.lacznie_wygrane // PROG_HAZARDZISTY - self.hazard_odebrane)
+    def available_gambler_bonuses(self):
+        return max(0, self.total_winnings // GAMBLER_BONUS_THRESHOLD - self.gambler_bonuses_claimed)
 
-    def odbierz_bonus_bankruta(self):
-        if self.dolary != 0:
-            self._pokaz_blad_walidacji("Niedostępne", "Bonus bankruta jest dostępny tylko przy saldzie 0$!")
+    def claim_bankrupt_bonus(self):
+        if self.dollars != 0:
+            self._show_error_popup("Niedostępne", "Bonus bankruta jest dostępny tylko przy saldzie 0$!")
             return
-        self.dolary += BONUS_BANKRUTA
-        self.zapisz_dane()
-        self.pokaz_bonusy(f"Odebrano bonus bankruta (+{formatowanie(BONUS_BANKRUTA)}$)")
+        self.dollars += BANKRUPT_BONUS
+        self.save_data()
+        self.show_bonuses(f"Odebrano bonus bankruta (+{format_number(BANKRUPT_BONUS)}$)")
 
-    def odbierz_bonus_hazardzisty(self):
-        ile = self.dostepne_bonusy_hazardzisty()
-        if ile <= 0:
-            self._pokaz_blad_walidacji(
+    def claim_gambler_bonus(self):
+        count = self.available_gambler_bonuses()
+        if count <= 0:
+            self._show_error_popup(
                 "Niedostępne",
-                f"Wygraj jeszcze {formatowanie(PROG_HAZARDZISTY - (self.lacznie_wygrane % PROG_HAZARDZISTY))}$ aby odblokować bonus!"
+                f"Wygraj jeszcze {format_number(GAMBLER_BONUS_THRESHOLD - (self.total_winnings % GAMBLER_BONUS_THRESHOLD))}$ aby odblokować bonus!"
             )
             return
-        kwota = ile * BONUS_HAZARDZISTY
-        self.hazard_odebrane += ile
-        self.dolary += kwota
-        self.zapisz_dane()
-        self.pokaz_bonusy(f"Odebrano bonus hazardzisty (+{formatowanie(kwota)}$)")
+        amount = count * GAMBLER_BONUS
+        self.gambler_bonuses_claimed += count
+        self.dollars += amount
+        self.save_data()
+        self.show_bonuses(f"Odebrano bonus hazardzisty (+{format_number(amount)}$)")
 
-    def konfiguracja_gry(self, mode):
+    def configure_game(self, mode):
         self.mode = mode
         if mode == "ranked":
-            self.rozpocznij_gre(min_val=10, max_val=100, obstawione=0)
+            self.start_game(min_value=10, max_value=100, wagered_amount=0)
             return
-        self._wyczysc_ekran()
-        card = self._karta(pady=24)
-        center = tk.Frame(card, bg=BG_CARD)
+        self._clear_screen(self.show_modes)
+        card = self._create_card(pady=24)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
         if mode == "unranked":
-            tk.Label(center, text="TRYB NIERANKINGOWY", font=(FONT_FAMILY, 18, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
-            tk.Label(center, text="Minimalna liczba (min. 5):", font=(FONT_FAMILY, 12, "bold"), bg=BG_CARD, fg=FG_TEXT).pack()
-            entry_min = tk.Entry(
+            tk.Label(center, text="TRYB NIERANKINGOWY", font=(FONT_FAMILY, 18, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
+            tk.Label(center, text="Minimalna liczba (min. 5):", font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_CARD, fg=FOREGROUND_TEXT).pack()
+            min_entry = tk.Entry(
                 center,
                 font=(FONT_FAMILY, 12, "bold"),
-                bg=BG_INPUT,
-                fg=FG_TEXT,
-                disabledbackground=BG_INPUT,
-                disabledforeground=FG_MUTED,
+                bg=BACKGROUND_INPUT,
+                fg=FOREGROUND_TEXT,
+                disabledbackground=BACKGROUND_INPUT,
+                disabledforeground=FOREGROUND_MUTED,
                 insertbackground=PURPLE_LIGHT,
                 highlightthickness=1,
-                highlightbackground=FG_TEXT,
+                highlightbackground=FOREGROUND_TEXT,
                 highlightcolor=PURPLE_DARK,
                 justify="center",
                 width=16
             )
-            entry_min.insert(0, "10")
-            entry_min.pack(pady=(4, 12))
-            tk.Label(center, text="Maksymalna liczba (min. 10, większa od min):", font=(FONT_FAMILY, 12, "bold"), bg=BG_CARD, fg=FG_TEXT).pack()
-            entry_max = tk.Entry(
+            min_entry.insert(0, "10")
+            min_entry.pack(pady=(4, 12))
+            tk.Label(center, text="Maksymalna liczba (min. 10, większa od min):", font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_CARD, fg=FOREGROUND_TEXT).pack()
+            max_entry = tk.Entry(
                 center,
                 font=(FONT_FAMILY, 12, "bold"),
-                bg=BG_INPUT,
-                fg=FG_TEXT,
-                disabledbackground=BG_INPUT,
-                disabledforeground=FG_MUTED,
+                bg=BACKGROUND_INPUT,
+                fg=FOREGROUND_TEXT,
+                disabledbackground=BACKGROUND_INPUT,
+                disabledforeground=FOREGROUND_MUTED,
                 insertbackground=PURPLE_LIGHT,
                 highlightthickness=1,
-                highlightbackground=FG_TEXT,
+                highlightbackground=FOREGROUND_TEXT,
                 highlightcolor=PURPLE_DARK,
                 justify="center",
                 width=16
             )
-            entry_max.insert(0, "100")
-            entry_max.pack(pady=(4, 18))
-            def zatwierdz_unranked():
+            max_entry.insert(0, "100")
+            max_entry.pack(pady=(4, 18))
+            def confirm_unranked():
                 try:
-                    w_min = int(entry_min.get())
-                    w_max = int(entry_max.get())
+                    chosen_min = int(min_entry.get())
+                    chosen_max = int(max_entry.get())
                 except ValueError:
-                    self._pokaz_blad_walidacji("Błąd", "Wpisz poprawne liczby!")
+                    self._show_error_popup("Błąd", "Wpisz poprawne liczby!")
                     return
-                if w_min < 5 or w_max < 10 or w_min >= w_max:
-                    self._pokaz_blad_walidacji(
+                if chosen_min < 5 or chosen_max < 10 or chosen_min >= chosen_max:
+                    self._show_error_popup(
                         "Błędny przedział",
                         "Minimalna => 5, maksymalna => 10 oraz minimalna < maksymalnej!",
                     )
                     return
-                self.rozpocznij_gre(min_val=w_min, max_val=w_max, obstawione=0)
-            self._przycisk(center, "Rozpocznij grę", zatwierdz_unranked, width=22).pack(pady=6)
+                self.start_game(min_value=chosen_min, max_value=chosen_max, wagered_amount=0)
+            self._create_button(center, "Rozpocznij grę", confirm_unranked, width=22).pack(pady=6)
         elif mode == "wager":
-            tk.Label(center, text="TRYB ZAKŁADOWY", font=(FONT_FAMILY, 18, "bold"), bg=BG_CARD, fg=WARNING).pack(pady=(0, 8))
+            tk.Label(center, text="TRYB ZAKŁADOWY", font=(FONT_FAMILY, 18, "bold"), bg=BACKGROUND_CARD, fg=WARNING).pack(pady=(0, 8))
             tk.Label(
                 center,
-                text=f"Twoje saldo: {formatowanie(self.dolary)}$\nZgadnij liczbę (10–100) w max 5 próbach, aby podwoić stawkę!",
+                text=f"Twoje saldo: {format_number(self.dollars)}$",
                 font=(FONT_FAMILY, 12, "bold"),
-                bg=BG_CARD,
-                fg=FG_MUTED,
+                bg=BACKGROUND_CARD,
+                fg=FOREGROUND_MUTED,
                 justify="center"
             ).pack(pady=(0, 14))
-            if self.dolary < 100:
-                tk.Label(center, text="Masz za mało dolarów (minimum to 100$).", font=(FONT_FAMILY, 12, "bold"), bg=BG_CARD, fg=DANGER).pack(pady=10)
+            if self.dollars < 100:
+                tk.Label(center, text="Masz za mało dolarów (minimum to 100$).", font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_CARD, fg=DANGER).pack(pady=10)
             else:
-                tk.Label(center, text="Kwota zakładu (min. 100$):", font=(FONT_FAMILY, 12, "bold"), bg=BG_CARD, fg=FG_TEXT).pack()
-                entry_bet = tk.Entry(
+                tk.Label(center, text="Kwota zakładu (min. 100$):", font=(FONT_FAMILY, 12, "bold"), bg=BACKGROUND_CARD, fg=FOREGROUND_TEXT).pack()
+                bet_entry = tk.Entry(
                     center,
                     font=(FONT_FAMILY, 12, "bold"),
-                    bg=BG_INPUT,
-                    fg=FG_TEXT,
-                    disabledbackground=BG_INPUT,
-                    disabledforeground=FG_MUTED,
+                    bg=BACKGROUND_INPUT,
+                    fg=FOREGROUND_TEXT,
+                    disabledbackground=BACKGROUND_INPUT,
+                    disabledforeground=FOREGROUND_MUTED,
                     insertbackground=PURPLE_LIGHT,
                     highlightthickness=1,
-                    highlightbackground=FG_TEXT,
+                    highlightbackground=FOREGROUND_TEXT,
                     highlightcolor=PURPLE_DARK,
                     justify="center",
                     width=16
                 )
-                entry_bet.insert(0, "100")
-                entry_bet.pack(pady=(6, 16))
-                def zatwierdz_wager():
+                bet_entry.insert(0, "100")
+                bet_entry.pack(pady=(6, 16))
+                def confirm_wager():
                     try:
-                        stawka = int(entry_bet.get())
+                        stake = int(bet_entry.get())
                     except ValueError:
-                        self._pokaz_blad_walidacji("Błąd", "Wpisz poprawną kwotę!")
+                        self._show_error_popup("Błąd", "Wpisz poprawną kwotę!")
                         return
-                    if stawka < 100 or stawka > self.dolary:
-                        self._pokaz_blad_walidacji(
+                    if stake < 100 or stake > self.dollars:
+                        self._show_error_popup(
                             "Błędna kwota",
-                            f"Kwota musi wynosić od 100$ do {formatowanie(self.dolary)}$!",
+                            f"Kwota musi wynosić od 100$ do {format_number(self.dollars)}$!",
                         )
                         return
-                    self.dolary -= stawka
-                    self.rozpocznij_gre(min_val=10, max_val=100, obstawione=stawka)
-                self._przycisk(center, "Postaw i zacznij", zatwierdz_wager, width=22).pack(pady=6)
-        self._przycisk(center, "Powrót do trybów", self.pokaz_tryby, width=22, pady=8).pack(pady=(14, 0))
+                    self.dollars -= stake
+                    self.start_game(min_value=10, max_value=100, wagered_amount=stake)
+                self._create_button(center, "Postaw i zacznij", confirm_wager, width=22).pack(pady=6)
+        self._create_button(center, "Powrót do trybów", self.show_modes, width=22, pady=8).pack(pady=(14, 0))
 
-    def rozpocznij_gre(self, min_val, max_val, obstawione):
-        self.min_val = min_val
-        self.max_val = max_val
-        self.obstawione = obstawione
-        self.losowa = random.randint(min_val, max_val)
-        self.dzielnik = 1
-        self.gra_w_toku = True
-        self.podpowiedz_uzyta = False
-        self.btn_hint = None
-        self.lbl_hint = None
-        self.btn_replay = None
-        self._wyczysc_ekran()
-        card = self._karta(pady=22)
-        center = tk.Frame(card, bg=BG_CARD)
+    def start_game(self, min_value, max_value, wagered_amount):
+        self.min_value = min_value
+        self.max_value = max_value
+        self.wagered_amount = wagered_amount
+        self.secret_number = random.randint(min_value, max_value)
+        self.current_attempt = 1
+        self.game_in_progress = True
+        self.hint_used = False
+        self.hint_button = None
+        self.hint_label = None
+        self._clear_screen()
+        card = self._create_card(pady=22)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
-        tytul_trybu = {
+        mode_title = {
             "unranked": "TRYB NIERANKINGOWY",
             "ranked": "TRYB RANKINGOWY",
             "wager": f"TRYB ZAKŁADOWY"
         }[self.mode]
-        tk.Label(center, text=tytul_trybu, font=(FONT_FAMILY, 15, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack()
+        tk.Label(center, text=mode_title, font=(FONT_FAMILY, 15, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack()
         tk.Label(
             center,
-            text=f"Wylosowano liczbę z przedziału <{min_val};{max_val}>",
+            text=f"Wylosowano liczbę z przedziału <{min_value};{max_value}>",
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_TEXT
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_TEXT
         ).pack(pady=(4, 12))
-        self.lbl_proba = tk.Label(
+        self.attempt_label = tk.Label(
             center,
             text="Próba nr 1" + (" / 5" if self.mode == "wager" else ""),
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_MUTED
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_MUTED
         )
-        self.lbl_proba.pack()
-        self.wynik_frame = tk.Frame(center, bg=BG_CARD, pady=12)
-        self.wynik_frame.pack()
-        self.lbl_podpowiedz = tk.Label(
-            self.wynik_frame,
+        self.attempt_label.pack()
+        self.result_frame = tk.Frame(center, bg=BACKGROUND_CARD, pady=12)
+        self.result_frame.pack()
+        self.feedback_label = tk.Label(
+            self.result_frame,
             text="Wpisz swoją liczbę i wciśnij Enter.",
             font=(FONT_FAMILY, 13, "bold"),
-            bg=BG_CARD,
-            fg=FG_TEXT,
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_TEXT,
             justify="center"
         )
-        self.lbl_podpowiedz.pack()
-        self.ranga_wynik_frame = tk.Frame(self.wynik_frame, bg=BG_CARD)
-        self.ranga_wynik_frame.pack()
-        self.lbl_ranga_prefix = tk.Label(
-            self.ranga_wynik_frame,
+        self.feedback_label.pack()
+        self.rank_result_frame = tk.Frame(self.result_frame, bg=BACKGROUND_CARD)
+        self.rank_result_frame.pack()
+        self.rank_prefix_label = tk.Label(
+            self.rank_result_frame,
             text="",
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_TEXT
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_TEXT
         )
-        self.lbl_ranga_prefix.pack(side="left")
-        self.lbl_ranga_nazwa = tk.Label(
-            self.ranga_wynik_frame,
+        self.rank_prefix_label.pack(side="left")
+        self.rank_name_label = tk.Label(
+            self.rank_result_frame,
             text="",
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_TEXT
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_TEXT
         )
-        self.lbl_ranga_nazwa.pack(side="left")
-        self.lbl_ranga_zmiana = tk.Label(
-            self.ranga_wynik_frame,
+        self.rank_name_label.pack(side="left")
+        self.rank_change_label = tk.Label(
+            self.rank_result_frame,
             text="",
             font=(FONT_FAMILY, 12, "bold"),
-            bg=BG_CARD,
-            fg=FG_TEXT
+            bg=BACKGROUND_CARD,
+            fg=FOREGROUND_TEXT
         )
-        self.lbl_ranga_zmiana.pack(side="left")
-        self.entry_zgad = tk.Entry(
+        self.rank_change_label.pack(side="left")
+        self.guess_entry = tk.Entry(
             center,
             font=(FONT_FAMILY, 16, "bold"),
-            bg=BG_INPUT,
-            fg=FG_TEXT,
-            disabledbackground=BG_MUTED,
-            disabledforeground=FG_MUTED,
+            bg=BACKGROUND_INPUT,
+            fg=FOREGROUND_TEXT,
+            disabledbackground=BACKGROUND_MUTED,
+            disabledforeground=FOREGROUND_MUTED,
             insertbackground=PURPLE_LIGHT,
             highlightthickness=1,
-            highlightbackground=FG_TEXT,
+            highlightbackground=FOREGROUND_TEXT,
             highlightcolor=PURPLE_DARK,
             justify="center",
             width=12
         )
-        self.entry_zgad.pack(pady=(0, 10))
-        self.entry_zgad.focus_set()
-        self.entry_zgad.bind("<Return>", lambda _e: self.sprawdz_liczbe())
-        self.btn_zgadnij = self._przycisk(center, "Zgadnij", self.sprawdz_liczbe, width=22)
-        self.btn_zgadnij.pack()
-
+        self.guess_entry.pack(pady=(0, 10))
+        self.guess_entry.focus_set()
+        self.guess_entry.bind("<Return>", lambda _event: self.check_guess())
+        self.guess_button = self._create_button(center, "Zgadnij", self.check_guess, width=22)
+        self.guess_button.pack()
         if self.mode == "ranked":
-            self.btn_hint = self._przycisk(
+            self.hint_button = self._create_button(
                 center,
-                f"Użyj podpowiedzi ({self.podpowiedzi})",
-                self.uzyj_podpowiedzi,
+                f"Użyj podpowiedzi ({self.hints})",
+                self.use_hint,
                 width=22,
                 pady=8
             )
-            self.btn_hint.pack(pady=(6, 0))
-            if self.podpowiedzi <= 0:
-                self._wylacz_przycisk(self.btn_hint)
-            self.lbl_hint = tk.Label(
+            self.hint_button.pack(pady=(6, 0))
+            if self.hints <= 0:
+                self._disable_button(self.hint_button)
+            self.hint_label = tk.Label(
                 center,
                 text="",
                 font=(FONT_FAMILY, 10, "bold"),
-                bg=BG_CARD,
+                bg=BACKGROUND_CARD,
                 fg=PURPLE_LIGHT
             )
+        self.replay_button = self._create_button(center, "Zagraj ponownie", self._play_again, width=22, pady=8)
+        self._disable_button(self.replay_button)
+        self.replay_button.pack(pady=(6, 0))
+        self.back_to_menu_button = self._create_button(center, "Powrót do menu", self._return_to_menu_from_game, width=22, pady=8)
+        self.back_to_menu_button.config(state="disabled", bg=BUTTON_BASE, fg=FOREGROUND_MUTED)
+        self.back_to_menu_button.pack(pady=(6, 0))
 
-        self.btn_replay = self._przycisk(center, "Zagraj ponownie", self._zagraj_ponownie, width=22, pady=8)
-        self._wylacz_przycisk(self.btn_replay)
-        self.btn_replay.pack(pady=(6, 0))
-
-        self.btn_powrot_menu = self._przycisk(center, "Powrót do menu", self._powrot_do_menu_z_gry, width=22, pady=8)
-        self.btn_powrot_menu.config(state="disabled", bg=BTN_BASE, fg=FG_MUTED)
-        self.btn_powrot_menu.pack(pady=(6, 0))
-
-    def uzyj_podpowiedzi(self):
-        if not self.gra_w_toku or self.mode != "ranked":
+    def use_hint(self):
+        if not self.game_in_progress or self.mode != "ranked":
             return
-        if self.podpowiedz_uzyta or self.podpowiedzi <= 0:
+        if self.hint_used or self.hints <= 0:
             return
-        self.podpowiedzi -= 1
-        self.podpowiedz_uzyta = True
-        szer = SZEROKOSC_PODPOWIEDZI
-        najmniejszy_start = max(self.min_val, self.losowa - szer + 1)
-        najwiekszy_start = min(self.losowa, self.max_val - szer + 1)
-        start = random.randint(najmniejszy_start, najwiekszy_start)
-        koniec = start + szer - 1
-        self.zapisz_dane()
-        self.lbl_hint.config(text=f"Podpowiedź: Liczba jest w przedziale <{start};{koniec}>")
-        self.btn_hint.config(text=f"Użyj podpowiedzi ({self.podpowiedzi})")
-        self.lbl_hint.pack(pady=(4, 0), before=self.btn_replay)
-        self._wylacz_przycisk(self.btn_hint)
-        self.entry_zgad.focus_set()
+        self.hints -= 1
+        self.hint_used = True
+        width = HINT_RANGE_WIDTH
+        lowest_start = max(self.min_value, self.secret_number - width + 1)
+        highest_start = min(self.secret_number, self.max_value - width + 1)
+        range_start = random.randint(lowest_start, highest_start)
+        range_end = range_start + width - 1
+        self.save_data()
+        self.hint_label.config(text=f"Podpowiedź: Liczba jest w przedziale <{range_start};{range_end}>")
+        self.hint_button.config(text=f"Użyj podpowiedzi ({self.hints})")
+        self.hint_label.pack(pady=(4, 0), before=self.replay_button)
+        self._disable_button(self.hint_button)
+        self.guess_entry.focus_set()
 
-    def sprawdz_liczbe(self):
+    def check_guess(self):
         try:
-            liczba = int(self.entry_zgad.get())
+            number = int(self.guess_entry.get())
         except ValueError:
-            self.lbl_podpowiedz.config(text="To musi być liczba całkowita!", fg=DANGER)
-            self.entry_zgad.delete(0, "end")
+            self.feedback_label.config(text="To musi być liczba całkowita!", fg=DANGER)
+            self.guess_entry.delete(0, "end")
             return
-        self.entry_zgad.delete(0, "end")
-        if liczba == self.losowa:
-            self._obsluz_wygrana()
+        self.guess_entry.delete(0, "end")
+        if number == self.secret_number:
+            self._handle_win()
             return
         if self.mode == "wager":
-            if self.dzielnik >= 5:
-                self._obsluz_przegrana_zaklad()
+            if self.current_attempt >= 5:
+                self._handle_wager_loss()
                 return
-            self.dzielnik += 1
-            self.lbl_proba.config(text=f"Próba {self.dzielnik} / 5")
+            self.current_attempt += 1
+            self.attempt_label.config(text=f"Próba {self.current_attempt} / 5")
         else:
-            self.dzielnik += 1
-            self.lbl_proba.config(text=f"Próba {self.dzielnik}")
-        if abs(liczba - self.losowa) == 1:
-            self.lbl_podpowiedz.config(text="Jesteś bardzo blisko!", fg=WARNING)
-        elif liczba < self.losowa:
-            self.lbl_podpowiedz.config(text="Za mało!", fg=TOO_LESS)
+            self.current_attempt += 1
+            self.attempt_label.config(text=f"Próba {self.current_attempt}")
+        if abs(number - self.secret_number) == 1:
+            self.feedback_label.config(text="Jesteś bardzo blisko!", fg=WARNING)
+        elif number < self.secret_number:
+            self.feedback_label.config(text="Za mało!", fg=TOO_LOW)
         else:
-            self.lbl_podpowiedz.config(text="Za dużo!", fg=TOO_MUCH)
+            self.feedback_label.config(text="Za dużo!", fg=TOO_HIGH)
 
-    def _zakoncz_gre_ui(self):
-        self.entry_zgad.config(state="disabled", disabledforeground=FG_MUTED, highlightbackground=FG_MUTED, highlightcolor=FG_MUTED)
-        self.btn_zgadnij.config(state="disabled", bg=BTN_BASE, fg=FG_MUTED)
-        if self.btn_hint is not None:
-            self._wylacz_przycisk(self.btn_hint)
-        if self.btn_replay is not None:
-            self.btn_replay.config(state="normal", bg=BTN_BASE, fg=FG_TEXT, cursor="hand2")
-        self.btn_powrot_menu.config(state="normal", bg=BTN_BASE, fg=FG_TEXT)
+    def _finish_game_ui(self):
+        self.guess_entry.config(state="disabled", disabledforeground=FOREGROUND_MUTED, highlightbackground=FOREGROUND_MUTED, highlightcolor=FOREGROUND_MUTED)
+        self.guess_button.config(state="disabled", bg=BUTTON_BASE, fg=FOREGROUND_MUTED)
+        if self.hint_button is not None:
+            self._disable_button(self.hint_button)
+        if self.replay_button is not None:
+            self.replay_button.config(state="normal", bg=BUTTON_BASE, fg=FOREGROUND_TEXT, cursor="hand2")
+        self.back_to_menu_button.config(state="normal", bg=BUTTON_BASE, fg=FOREGROUND_TEXT)
+        self._back_action = self.show_menu
 
-    def _obsluz_wygrana(self):
-        self.lbl_ranga_prefix.config(text="")
-        self.lbl_ranga_nazwa.config(text="")
-        self.lbl_ranga_zmiana.config(text="")
-        kolor_komunikatu = SUCCESS
+    def _handle_win(self):
+        self.rank_prefix_label.config(text="")
+        self.rank_name_label.config(text="")
+        self.rank_change_label.config(text="")
+        message_color = SUCCESS
         if self.mode == "unranked":
-            zdobyte = 100.0 / self.dzielnik
-            self.ogolne_pkt += zdobyte
-            self.nierank_gry += 1
-            self.nierank_proby += self.dzielnik
-            komunikat = (
-                f"Gratulacje! Udało ci się zgadnąć przy {self.dzielnik} próbie!\n"
-                f"Zdobywasz {zdobyte:.2f} punktów!"
+            earned_points = 100.0 / self.current_attempt
+            self.total_points += earned_points
+            self.unranked_games += 1
+            self.unranked_attempts += self.current_attempt
+            message = (
+                f"Gratulacje! Udało ci się zgadnąć przy {self.current_attempt} próbie!\n"
+                f"Zdobywasz {earned_points:.2f} punktów!"
             )
         elif self.mode == "ranked":
-            stara_ranga = self.zaladuj_range()
-            mmr = 30 - (5 * self.dzielnik)
-            bonus_mmr = 0
-            if self.booster_gry > 0:
-                bonus_mmr = BOOSTER_MMR
-                self.booster_gry -= 1
-            mmr += bonus_mmr
-            self.ogolne_mmr += mmr
-            self.rank_gry += 1
-            self.rank_proby += self.dzielnik
-            nowa_ranga = self.zaladuj_range()
-            if mmr > 0:
-                komunikat = (
-                    f"Gratulacje! Udało ci się zgadnąć przy {self.dzielnik} próbie!\n"
-                    f"Zdobywasz {mmr} MMR!"
+            old_rank = self.get_rank()
+            mmr_change = 30 - (5 * self.current_attempt)
+            booster_mmr_bonus = 0
+            if self.booster_games_left > 0:
+                booster_mmr_bonus = BOOSTER_MMR
+                self.booster_games_left -= 1
+            mmr_change += booster_mmr_bonus
+            self.total_mmr += mmr_change
+            self.ranked_games += 1
+            self.ranked_attempts += self.current_attempt
+            new_rank = self.get_rank()
+            if mmr_change > 0:
+                message = (
+                    f"Gratulacje! Udało ci się zgadnąć przy {self.current_attempt} próbie!\n"
+                    f"Zdobywasz {mmr_change} MMR!"
                 )
-            elif mmr == 0:
-                komunikat = (
-                    f"Udało ci się zgadnąć przy {self.dzielnik} próbie!\n"
+            elif mmr_change == 0:
+                message = (
+                    f"Udało ci się zgadnąć przy {self.current_attempt} próbie!\n"
                     "Nie zdobywasz żadnego MMR!"
                 )
-                kolor_komunikatu = WARNING
+                message_color = WARNING
             else:
-                komunikat = (
-                    f"Udało ci się zgadnąć przy {self.dzielnik} próbie!\n"
-                    f"Tracisz {abs(mmr)} MMR!"
+                message = (
+                    f"Udało ci się zgadnąć przy {self.current_attempt} próbie!\n"
+                    f"Tracisz {abs(mmr_change)} MMR!"
                 )
-                kolor_komunikatu = DANGER
-            if bonus_mmr:
-                komunikat += f" (+{bonus_mmr} MMR Boost)"
-            self.lbl_ranga_prefix.config(text="Twoja aktualna ranga:", fg=FG_TEXT)
-            self.lbl_ranga_nazwa.config(text=nowa_ranga, fg=self.kolor_rangi(nowa_ranga))
-            kolejnosc = list(KOLORY_RANG)
-            if kolejnosc.index(nowa_ranga) > kolejnosc.index(stara_ranga):
-                self.lbl_ranga_zmiana.config(text="(awans!)", fg=SUCCESS)
-            elif kolejnosc.index(nowa_ranga) < kolejnosc.index(stara_ranga):
-                self.lbl_ranga_zmiana.config(text="(degrad!)", fg=DANGER)
+                message_color = DANGER
+            if booster_mmr_bonus:
+                message += f" (+{booster_mmr_bonus} MMR Boost)"
+            self.rank_prefix_label.config(text="Twoja aktualna ranga:", fg=FOREGROUND_TEXT)
+            self.rank_name_label.config(text=new_rank, fg=self.get_rank_color(new_rank))
+            rank_order = list(RANK_COLORS)
+            if rank_order.index(new_rank) > rank_order.index(old_rank):
+                self.rank_change_label.config(text="(awans!)", fg=SUCCESS)
+            elif rank_order.index(new_rank) < rank_order.index(old_rank):
+                self.rank_change_label.config(text="(degrad!)", fg=DANGER)
         else:
-            wygrana = self.obstawione * 2
-            self.dolary += wygrana
-            self.lacznie_wygrane += wygrana
-            if self.najwieksza_wygrana < wygrana:
-                self.najwieksza_wygrana = wygrana
-            komunikat = (
-                f"Gratulacje! Udało ci się zgadnąć przy {self.dzielnik} próbie!\n"
-                f"Wygrywasz {formatowanie(wygrana)}$! Łącznie masz {formatowanie(self.dolary)}$!"
+            winnings = self.wagered_amount * 2
+            self.dollars += winnings
+            self.total_winnings += winnings
+            if self.biggest_win < winnings:
+                self.biggest_win = winnings
+            message = (
+                f"Gratulacje! Udało ci się zgadnąć przy {self.current_attempt} próbie!\n"
+                f"Wygrywasz {format_number(winnings)}$! Łącznie masz {format_number(self.dollars)}$!"
             )
-        self.gra_w_toku = False
-        self.zapisz_dane()
-        self.lbl_podpowiedz.config(text=komunikat, fg=kolor_komunikatu)
-        self._zakoncz_gre_ui()
+        self.game_in_progress = False
+        self.save_data()
+        self.feedback_label.config(text=message, fg=message_color)
+        self._finish_game_ui()
 
-    def _obsluz_przegrana_zaklad(self):
-        komunikat = (
-            f"Skończyły ci się próby! Wylosowana liczba to: {self.losowa}\n"
-            f"Tracisz {formatowanie(self.obstawione)}$! Łącznie masz {formatowanie(self.dolary)}$!"
+    def _handle_wager_loss(self):
+        message = (
+            f"Skończyły ci się próby! Wylosowana liczba to: {self.secret_number}\n"
+            f"Tracisz {format_number(self.wagered_amount)}$! Łącznie masz {format_number(self.dollars)}$!"
         )
-        self.gra_w_toku = False
-        self.zapisz_dane()
-        self.lbl_podpowiedz.config(text=komunikat, fg=DANGER)
-        self._zakoncz_gre_ui()
+        self.game_in_progress = False
+        self.save_data()
+        self.feedback_label.config(text=message, fg=DANGER)
+        self._finish_game_ui()
 
-    def pokaz_ustawienia(self):
-        self._wyczysc_ekran()
-        self.wybrany_fullscreen = self.fullscreen
-        card = self._karta(pady=26)
-        center = tk.Frame(card, bg=BG_CARD)
+    def show_settings(self):
+        self._clear_screen(self.show_menu)
+        self.selected_fullscreen = self.fullscreen
+        card = self._create_card(pady=26)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(center, text="USTAWIENIA", font=(FONT_FAMILY, 20, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 22))
-        def odswiez_przycisk_ekranu():
-            btn_ekran.config(text="Pełen ekran: WŁ" if self.wybrany_fullscreen else "Pełen ekran: WYŁ")
-        def przelacz_wybor():
-            self.wybrany_fullscreen = not self.wybrany_fullscreen
-            odswiez_przycisk_ekranu()
-        def zastosuj_ekran():
-            self._zastosuj_tryb_ekranu(self.wybrany_fullscreen)
-            odswiez_przycisk_ekranu()
-        self._odswiez_ekran_ustawien = odswiez_przycisk_ekranu
-        btn_ekran = self._przycisk(center, "", przelacz_wybor, width=28)
-        btn_ekran.pack(pady=7)
-        odswiez_przycisk_ekranu()
-        self._przycisk(center, "Resetuj statystyki", self._otworz_okno_resetu, width=28).pack(pady=7)
-        bottom_row = tk.Frame(center, bg=BG_CARD)
+        tk.Label(center, text="USTAWIENIA", font=(FONT_FAMILY, 20, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack(pady=(0, 22))
+        def refresh_screen_button():
+            screen_button.config(text="Pełen ekran: WŁ" if self.selected_fullscreen else "Pełen ekran: WYŁ")
+        def toggle_selection():
+            self.selected_fullscreen = not self.selected_fullscreen
+            refresh_screen_button()
+        def apply_screen():
+            self._apply_screen_mode(self.selected_fullscreen)
+            refresh_screen_button()
+        self._refresh_settings_screen = refresh_screen_button
+        screen_button = self._create_button(center, "", toggle_selection, width=28)
+        screen_button.pack(pady=7)
+        refresh_screen_button()
+        self._create_button(center, "Resetuj statystyki", self._open_reset_window, width=28).pack(pady=7)
+        bottom_row = tk.Frame(center, bg=BACKGROUND_CARD)
         bottom_row.pack(pady=(18, 0))
-        self._przycisk(bottom_row, "Zastosuj", zastosuj_ekran, width=13, pady=9).pack(side="left", padx=(0, 6))
-        self._przycisk(bottom_row, "Powrót", self.pokaz_menu, width=13, pady=9).pack(side="left", padx=(6, 0))
+        self._create_button(bottom_row, "Zastosuj", apply_screen, width=13, pady=9).pack(side="left", padx=(0, 6))
+        self._create_button(bottom_row, "Powrót", self.show_menu, width=13, pady=9).pack(side="left", padx=(6, 0))
 
-    def pokaz_dodatkowe(self):
-        self._wyczysc_ekran()
-        card = self._karta(pady=24)
-        center = tk.Frame(card, bg=BG_CARD)
+    def show_extras(self):
+        self._clear_screen(self.show_menu)
+        card = self._create_card(pady=24)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(center, text="OPCJE DODATKOWE", font=(FONT_FAMILY, 20, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 20))
-        self._przycisk(center, "Statystyki", self.pokaz_statystyki, width=26).pack(pady=7)
-        self._przycisk(center, "Informacje", self.pokaz_informacje, width=26).pack(pady=7)
-        self._przycisk(center, "Nowości", self.pokaz_nowosci, width=26).pack(pady=7)
-        self._przycisk(center, "Bonusy", self.pokaz_bonusy, width=26).pack(pady=7)
-        self._przycisk(center, "Powrót do menu", self.pokaz_menu, width=26).pack(pady=7)
+        tk.Label(center, text="OPCJE DODATKOWE", font=(FONT_FAMILY, 20, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack(pady=(0, 20))
+        self._create_button(center, "Statystyki", self.show_statistics, width=26).pack(pady=7)
+        self._create_button(center, "Informacje", self.show_information, width=26).pack(pady=7)
+        self._create_button(center, "Nowości", self.show_news, width=26).pack(pady=7)
+        self._create_button(center, "Bonusy", self.show_bonuses, width=26).pack(pady=7)
+        self._create_button(center, "Powrót do menu", self.show_menu, width=26).pack(pady=7)
 
-    def pokaz_statystyki(self):
-        self._wyczysc_ekran()
-        card = self._karta(pady=20)
-        center = tk.Frame(card, bg=BG_CARD)
+    def show_statistics(self):
+        self._clear_screen(self.show_extras)
+        card = self._create_card(pady=20)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(center, text="STATYSTYKI", font=(FONT_FAMILY, 20, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
-        srednia_nierank = (self.nierank_proby / self.nierank_gry) if self.nierank_gry > 0 else 0.0
-        srednia_rank = (self.rank_proby / self.rank_gry) if self.rank_gry > 0 else 0.0
-        aktualna_ranga = self.zaladuj_range()
-        fragmenty = [
-            ("NIERANKINGOWE\n", "header"),
-            (f"• Zdobyte punkty: {self.ogolne_pkt:.2f}  |  Średnia prób: {srednia_nierank:.2f}\n\n", "text"),
-            ("RANKINGOWE\n", "header"),
+        tk.Label(center, text="STATYSTYKI", font=(FONT_FAMILY, 20, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
+        unranked_average = (self.unranked_attempts / self.unranked_games) if self.unranked_games > 0 else 0.0
+        ranked_average = (self.ranked_attempts / self.ranked_games) if self.ranked_games > 0 else 0.0
+        current_rank = self.get_rank()
+        fragments = [
+            ("NIERANKINGOWE:\n", "header"),
+            (f"• Zdobyte punkty: {self.total_points:.2f}\n", "text"),
+            (f"• Średnia prób: {unranked_average:.2f}\n", "text"),
+            ("RANKINGOWE:\n", "header"),
             ("• Ranga: ", "text"),
-            (aktualna_ranga, "text", self.kolor_rangi(aktualna_ranga)),
-            (f" ({self.ogolne_mmr} MMR)  |  Średnia prób: {srednia_rank:.2f}\n\n", "text"),
-            ("ZAKŁADY\n", "header"),
-            (
-                f"• Saldo: {formatowanie(self.dolary)}$  |  Największa wygrana: {formatowanie(self.najwieksza_wygrana)}$"
-                f"  |  Łącznie wygrane: {formatowanie(self.lacznie_wygrane)}$\n\n",
-                "text"
-            ),
-            ("EKWIPUNEK\n", "header"),
-            (f"• Podpowiedzi: {self.podpowiedzi}  |  Booster MMR: {self.booster_gry} gier", "text"),
+            (current_rank, "text", self.get_rank_color(current_rank)),
+            (f" ({self.total_mmr} MMR)\n", "text"),
+            (f"• Średnia prób: {ranked_average:.2f}\n", "text"),
+            ("ZAKŁADOWE:\n", "header"),
+            (f"• Saldo: {format_number(self.dollars)}$\n", "text"),
+            (f"• Największa wygrana: {format_number(self.biggest_win)}$\n", "text"),
+            (f"• Łącznie wygrane: {format_number(self.total_winnings)}$\n", "text"),
+            ("EKWIPUNEK:\n", "header"),
+            (f"• Podpowiedzi: {self.hints}\n", "text"),
+            (f"• Booster MMR: {self.booster_games_left} gier", "text")
         ]
-        self._panel_tekstowy(center, fragmenty, height=14, width=58)
-        self._przycisk(center, "Powrót", self.pokaz_dodatkowe, width=20, pady=8).pack()
+        self._create_text_panel(center, fragments, height=14, width=58)
+        self._create_button(center, "Powrót", self.show_extras, width=20, pady=8).pack()
 
-    def pokaz_informacje(self):
-        self._wyczysc_ekran()
-        card = self._karta(pady=20)
-        center = tk.Frame(card, bg=BG_CARD)
+    def show_information(self):
+        self._clear_screen(self.show_extras)
+        card = self._create_card(pady=20)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(center, text="INFORMACJE", font=(FONT_FAMILY, 20, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
-        fragmenty = [
-            ("Zgadywacz", "header"),
-            (" to gra, w której musisz odgadnąć wylosowaną liczbę z określonego przedziału.\n\n", "text"),
-            ("• Tryb nierankingowy: ", "header"),
-            ("Ustalasz swój własny przedział i zdobywasz punkty ogólne.\n", "text"),
-            ("• Tryb rankingowy: ", "header"),
-            ("Masz stały przedział 10–100 i zdobywasz punkty MMR, dzięki którym odblokowujesz kolejne rangi.\n", "text"),
-            ("• Tryb zakładowy: ", "header"),
-            (
-                "Obstawiasz dolary (min. 100$) i w maksymalnie 5 prób musisz zgadnąć "
-                "liczbę z zakresu 10–100. Wygrana podwaja stawkę, a przegrana zabiera obstawioną kwotę.\n",
-                "text",
-            )
+        tk.Label(center, text="INFORMACJE", font=(FONT_FAMILY, 20, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
+        fragments = [
+            ("Zgadywacz ", "header"),
+            ("to gra, w której musisz odgadnąć wylosowaną liczbę z określonego przedziału. Każdy tryb ma swoje własne zasady.\n", "text"),
+            ("Tryb nierankingowy: ", "header"),
+            ("Ustalasz swój własny przedział i zdobywasz punkty ogólne. Punkty nie mają tutaj żadnego większego znaczenia.\n", "text"),
+            ("Prawdopodobnie najlepszy i najzdrowszy sposób na granie w tą grę.\n", "text"),
+            ("Tryb rankingowy: ", "header"),
+            ("Masz stały przedział <10;100> i zdobywasz punkty MMR, dzięki którym odblokowujesz kolejne rangi. ", "text"),
+            ("Zaczynasz z 200 MMR i brązem. Możesz spaść do 0 MMR i stracić rangę, albo zdobyć srebro za 500 MMR i awansować co każde 500 MMR, aż do Master Zgadywacza za 2500 MMR. ", "text"),
+            ("1 rundę gry rankingowej zaczynasz z meczowym 25 MMR i spada ono z każdą kolejną próbą o -5, przez co po 6 próbie można skończyć z ujemnym MMR. ", "text"),
+            ("Na końcu meczu jest ono dodawane, niezmienione lub odejmowane od ogólnego MMR w zależności od wyniku.\n", "text"),
+            ("Tryb zakładowy: ", "header"),
+            ("Obstawiasz dolary (minimum 100$) i w maksymalnie 5 prób musisz zgadnąć liczbę ze stałego przedziału <10;100>. ", "text"),
+            ("Wygrana podwaja stawkę, a przegrana zabiera obstawioną kwotę.\n", "text"),
+            ("Sklep rankingowy: ", "header"),
+            ("W menu głównym możesz odwiedzić sklep, w którym możesz za dolary z trybu zakładowego, kupić przedmioty wspomagające do trybu rankingowego. ", "text"),
+            ("Możesz tam kupić:\n", "text"),
+            ("• Podpowiedź - Daje przedział 10 liczb, w którym jest wylosowana.\n", "text"),
+            ("• Booster MMR - Daje +10 MMR przy każdym wyniku przez 5 rund.\n", "text"),
+            ("Bonusy: ", "header"),
+            ("Są one do odebrania w dodatkowych opcjach przy spełnieniu odpowiednich wymagań. Te bonusy to:\n", "text"),
+            ("• Bonus Bankruta - Daje 500$, jeżeli twoje saldo wynosi 0$.\n", "text"),
+            ("• Bonus Hazardzisty - Daje 5.000$ za każde 25.000$ łącznych wygranych.\n", "text"),
+            ("Skróty klawiszowe: ", "header"),
+            ("\n• Backspace - Powrót do poprzedniego menu", "text"),
+            ("\n• R - Zagraj ponownie", "text"),
+            ("\n• F11 - Włącz/wyłącz pełen ekran", "text")
         ]
-        self._panel_tekstowy(center, fragmenty, height=12, width=58)
-        self._przycisk(center, "Powrót", self.pokaz_dodatkowe, width=20, pady=8).pack()
+        self._create_text_panel(center, fragments, height=14, width=58)
+        self._create_button(center, "Powrót", self.show_extras, width=20, pady=8).pack()
 
-    def pokaz_nowosci(self):
-        self._wyczysc_ekran()
-        card = self._karta(pady=20)
-        center = tk.Frame(card, bg=BG_CARD)
+    def show_news(self):
+        self._clear_screen(self.show_extras)
+        card = self._create_card(pady=20)
+        center = tk.Frame(card, bg=BACKGROUND_CARD)
         center.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(center, text="NOWOŚCI", font=(FONT_FAMILY, 20, "bold"), bg=BG_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
-        fragmenty = [
+        tk.Label(center, text="NOWOŚCI", font=(FONT_FAMILY, 20, "bold"), bg=BACKGROUND_CARD, fg=PURPLE_DARK).pack(pady=(0, 14))
+        fragments = [
+            ("WERSJA 1.3.2:\n", "header"),
+            ("• Dodano kilka skrótów klawiszowych\n", "text"),
+            ("• Dodano scrollbar do okienek informacyjnych\n", "text"),
+            ("• Naprawiono błąd z naliczaniem łącznych wygranych\n", "text"),
+            ("• Poprawiono kilka elementów wizualnych\n", "text"),
+            ("WERSJA 1.3.1:\n", "header"),
+            ("• Dodano tracenie -25 MMR przy wyjściu z gry rankingowej\n", "text"),
+            ("• Poprawiono kilka literówek\n", "text"),
             ("WERSJA 1.3:\n", "header"),
             ("• Dodano sklep rankingowy\n", "text"),
             ("• Dodano zakładkę z bonusami\n", "text"),
@@ -1133,19 +1296,19 @@ class ZgadywaczApp:
             ("• Dodano resetowanie statystyk w ustawieniach\n", "text"),
             ("• Naprawiono błędy z brakiem powrotu do menu", "text")
         ]
-        self._panel_tekstowy(center, fragmenty, height=15, width=58)
-        self._przycisk(center, "Powrót", self.pokaz_dodatkowe, width=20, pady=8).pack()
+        self._create_text_panel(center, fragments, height=14, width=58)
+        self._create_button(center, "Powrót", self.show_extras, width=20, pady=8).pack()
 
-    def wyjdz_z_gry(self):
-        if self.gra_w_toku and self.mode == "ranked":
-            self.ogolne_mmr = max(0, self.ogolne_mmr - 25)
-        self.zapisz_dane()
+    def quit_game(self):
+        if self.game_in_progress and self.mode == "ranked":
+            self.total_mmr = max(0, self.total_mmr - 25)
+        self.save_data()
         self.root.destroy()
         sys.exit(0)
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ZgadywaczApp(root)
+    app = NumGuesser(root)
     root.mainloop()
 
 # MADE BY FRYTA
