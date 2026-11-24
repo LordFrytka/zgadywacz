@@ -2,6 +2,7 @@
 <b>Zgadywacz</b> to gra, w której musisz odgadnąć wylosowaną liczbę z określonego przedziału. Każdy tryb ma swoje własne zasady. Szczegółowy opis znajdziesz <a href="https://github.com/LordFrytka/zgadywacz#szczeg%C3%B3%C5%82owy-opis">tutaj</a>.
 <h2>Dostępne wersje</h2>
 <ul>
+  <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.3.3">Wersja 1.3.3</a></li>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.3.2">Wersja 1.3.2</a></li>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.3.1">Wersja 1.3.1</a></li>
   <li><a href="https://github.com/LordFrytka/zgadywacz/releases/tag/wersja-1.3">Wersja 1.3</a></li>
