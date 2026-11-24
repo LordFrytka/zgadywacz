@@ -12,9 +12,12 @@
 </ul>
 <h2>WAŻNE!!!</h2>
 <ul>
+  <li>Wersja "lin" jest dla linuxa, a "win" dla windowsa</li>
   <li>Można pobrać sam .exe bez skryptu</li>
-  <li>Plik zapis.json tworzy się samemu przy zapisie danych</li>
+  <li>Plik zapis.json tworzy się samemu przy zapisie danych dla obu wersj</li>
   <li>Zalecane uruchomienie pliku .exe jako administrator</li>
+  <li>Wersja linuxowa jest nietestowana i może mieć problemy</li>
+  <li>Linux może nie mieć wsparcia na bieżąco</li>
 </ul>
 <h2>Szczegółowy opis</h2>
 <h3>Główne założenia gry:</h3>
